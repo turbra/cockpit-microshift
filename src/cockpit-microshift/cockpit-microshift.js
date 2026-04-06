@@ -242,6 +242,16 @@ function queryClusterId() {
     return params.get("clusterId") || "";
 }
 
+function statusRequestAppliesToPage(status) {
+    var requestedClusterId = queryClusterId();
+    var statusClusterId = status && status.request ? clusterIdFromRequest(status.request) : "";
+
+    if (!requestedClusterId) {
+        return true;
+    }
+    return requestedClusterId === statusClusterId;
+}
+
 function selectedStoragePool() {
     var selected = null;
     state.availableStoragePools.forEach(function (pool) {
@@ -999,6 +1009,10 @@ function schedulePoll() {
 
 function setJobFromStatus(status) {
     if (!status.running && (!status.state || Object.keys(status.state).length === 0)) {
+        state.job = null;
+        return;
+    }
+    if (!statusRequestAppliesToPage(status)) {
         state.job = null;
         return;
     }

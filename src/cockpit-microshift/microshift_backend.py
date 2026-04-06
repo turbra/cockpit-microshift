@@ -337,6 +337,10 @@ def ssh_base_argv(request: dict) -> list[str]:
         "-o",
         "BatchMode=yes",
         "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "ConnectionAttempts=1",
+        "-o",
         "StrictHostKeyChecking=no",
         "-o",
         "UserKnownHostsFile=/dev/null",
@@ -354,6 +358,10 @@ def scp_base_argv(request: dict) -> list[str]:
         str(host["sshPort"]),
         "-o",
         "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "ConnectionAttempts=1",
         "-o",
         "StrictHostKeyChecking=no",
         "-o",
@@ -913,7 +921,7 @@ def cluster_health(cluster: dict) -> dict:
     return result
 
 
-def discover_clusters() -> list[dict]:
+def discover_clusters(*, include_health: bool = False) -> list[dict]:
     backfill_cluster_record_from_runtime()
     clusters: list[dict] = []
     if not WORK_ROOT.exists():
@@ -955,11 +963,22 @@ def discover_clusters() -> list[dict]:
             prune_cluster_runtime(path, cluster)
             continue
 
-        cluster["health"] = cluster_health(cluster)
+        if include_health:
+            cluster["health"] = cluster_health(cluster)
         clusters.append(cluster)
 
     clusters.sort(key=lambda item: item.get("createdAt", ""), reverse=True)
     return clusters
+
+
+def discover_cluster(cluster_id: str, *, include_health: bool = False) -> dict | None:
+    cluster_id = str(cluster_id or "").strip()
+    if not cluster_id:
+        return None
+    for cluster in discover_clusters(include_health=include_health):
+        if cluster.get("clusterId") == cluster_id:
+            return cluster
+    return None
 
 
 def validate_local_payload(payload: dict) -> tuple[dict, list[str]]:
@@ -1904,6 +1923,13 @@ def handle_clusters() -> int:
     return json_response({"ok": True, "clusters": discover_clusters(), "running": job_running(load_state())})
 
 
+def handle_cluster(cluster_id: str) -> int:
+    cluster = discover_cluster(cluster_id, include_health=True)
+    if not cluster:
+        return json_response({"ok": False, "errors": [f"Cluster {cluster_id} was not found"]}, exit_code=0)
+    return json_response({"ok": True, "cluster": cluster, "running": job_running(load_state())})
+
+
 def handle_artifacts(payload_b64: str | None, current: bool) -> int:
     if current:
         if not REQUEST_FILE.exists():
@@ -2104,6 +2130,13 @@ def handle_cancel() -> int:
     state["status"] = "canceled"
     state["endedAt"] = current_timestamp()
     save_state(state)
+    if REQUEST_FILE.exists():
+        try:
+            request = json.loads(REQUEST_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            request = None
+        if request:
+            write_cluster_record(request, state)
     return json_response({"ok": True, "unitName": unit_name})
 
 
@@ -2127,6 +2160,8 @@ def main() -> int:
     run_job.add_argument("--unit-name", required=True)
 
     subparsers.add_parser("clusters")
+    cluster = subparsers.add_parser("cluster")
+    cluster.add_argument("--cluster-id", required=True)
     subparsers.add_parser("status")
     subparsers.add_parser("cancel")
 
@@ -2144,6 +2179,8 @@ def main() -> int:
             return handle_run_job(args.unit_name)
         if args.command == "clusters":
             return handle_clusters()
+        if args.command == "cluster":
+            return handle_cluster(args.cluster_id)
         if args.command == "status":
             return handle_status()
         if args.command == "cancel":

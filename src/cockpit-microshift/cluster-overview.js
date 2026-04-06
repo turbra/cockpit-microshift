@@ -224,14 +224,21 @@ function renderOverview() {
 }
 
 function refreshPage() {
+    var clusterId = queryClusterId();
+
+    if (!clusterId) {
+        state.cluster = null;
+        state.status = null;
+        renderTabs();
+        renderOverview();
+        return Promise.resolve();
+    }
+
     return Promise.all([
-        backendCommand("clusters"),
+        backendCommand("cluster", ["--cluster-id", clusterId]),
         backendCommand("status")
     ]).then(function (results) {
-        var clusterId = queryClusterId();
-        state.cluster = (results[0].clusters || []).find(function (entry) {
-            return entry.clusterId === clusterId;
-        }) || null;
+        state.cluster = results[0].cluster || null;
         state.status = results[1] || null;
         renderTabs();
         renderOverview();
