@@ -1,0 +1,26 @@
+{
+    "name": "cockpit-microshift",
+    "requires": {
+        "cockpit": "219"
+    },
+    "menu": {
+        "index": {
+            "label": "MicroShift",
+            "path": "index.html",
+            "order": 17,
+            "keywords": [
+                {
+                    "matches": [
+                        "microshift",
+                        "installer",
+                        "install",
+                        "edge",
+                        "rhel",
+                        "single-node"
+                    ]
+                }
+            ]
+        }
+    },
+    "content-security-policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
+}
