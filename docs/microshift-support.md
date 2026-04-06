@@ -56,7 +56,7 @@ The implementation aligns to the documented Red Hat MicroShift install model by:
 
 - collecting target host SSH and sudo access details instead of cluster-host VM definitions
 - optionally provisioning a local libvirt guest from a RHEL cloud image when `create-host` is selected
-- applying a Stakkr-style weighted performance domain to the provisioned VM when selected
+- applying a weighted performance domain to the provisioned VM when selected
 - validating RHEL version, architecture, SSH, sudo, and package availability before install
 - optionally registering the target host with RHSM through organization ID and activation key inputs before package install
 - rendering a MicroShift `config.yaml` from supported fields:
@@ -71,7 +71,7 @@ The implementation aligns to the documented Red Hat MicroShift install model by:
 - optionally configuring `firewalld` using the documented trusted sources and public ports
 - installing `microshift` and `openshift-clients` through `dnf`
 - writing:
-  - `/etc/crio/openshift-pull-secret`
+  - the CRI-O registry auth file under `/etc/crio/`
   - `/etc/microshift/config.yaml`
 - enabling and starting `microshift.service`
 - validating node readiness and pod state with `oc`
@@ -84,7 +84,7 @@ Expected prerequisites:
 - Cockpit host can reach the target host with SSH key auth
 - SSH user has `sudo -n`
 - target host is RHEL 9 or RHEL 10
-- operator supplies a valid pull secret
+- operator supplies valid registry authentication data
 
 Package access can use either:
 

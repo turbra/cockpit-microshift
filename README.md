@@ -1,37 +1,71 @@
-# cockpit-microshift
+# Cockpit MicroShift
 
-Standalone Cockpit plugin for guided MicroShift installation either onto an
-existing RHEL host over SSH or into a locally provisioned libvirt/KVM guest on
-the Cockpit host.
+`cockpit-microshift` is a Cockpit-hosted local MicroShift installer for one
+existing RHEL host or one KVM/libvirt guest created on the Cockpit host.
 
 [![License: GPL-3.0](https://img.shields.io/github/license/turbra/cockpit-microshift)](LICENSE)
 ![MicroShift 4.21](https://img.shields.io/badge/MicroShift-4.21-red)
 ![Cockpit](https://img.shields.io/badge/Cockpit-plugin-blue)
+![KVM/libvirt](https://img.shields.io/badge/KVM-libvirt-blue)
 ![RHEL 9/10](https://img.shields.io/badge/RHEL-9%2F10-red)
 
-- dedicated MicroShift installer UI
-- cluster list landing page with per-cluster overview
-- host-based RPM install workflow
+- guided MicroShift host deployment
+- local cluster inventory landing page with per-cluster overview
+- self-contained privileged backend for validation, runtime state, and install artifacts
 - optional local libvirt/KVM guest provisioning before the in-guest install
-- optional local libvirt/KVM guest provisioning with selectable performance domains
-- preflight checks for RHEL version, SSH, sudo, architecture, and package availability
-- optional automated RHSM registration and MicroShift repository enablement
-- rendered `config.yaml`, request JSON, and remote install plan review
-- execution status, recent output, and kubeconfig retrieval after install
+- rendered `config.yaml`, request JSON, install plan, cloud-init inputs, and `virt-install` plan review
+- deployment status, recent output, and recorded kubeconfig access details
 
-## Authoritative Sources
+## Start Here
 
-- Red Hat Build of MicroShift 4.21 installation guide:
-  https://docs.redhat.com/en/documentation/red_hat_build_of_microshift/4.21/html-single/getting_ready_to_install_microshift/index
-- Upstream implementation:
-  https://github.com/openshift/microshift
-- Community mirror reviewed for context:
-  https://github.com/microshift-io/microshift
+- install the plugin from source:
+  [commands](#from-source)
+- review host prerequisites:
+  [notes](#prerequisites)
+- build the RPM:
+  [commands](#building-the-rpm)
+- install the plugin from RPM:
+  [commands](#from-rpm)
+- review backend limits and runtime ownership:
+  [notes](#backend-expectations)
 
-This plugin follows the Red Hat host-based RPM installation model for the final
-MicroShift install. The local libvirt/KVM path is an intentional convenience
-layer that provisions a RHEL guest first, then applies the same documented
-in-guest install flow.
+> [!IMPORTANT]
+> The validated deployment path today is:
+>
+> - `x86_64`
+> - single-node MicroShift
+> - static host networking
+> - existing RHEL host deployment over SSH
+> - local libvirt guest creation on the Cockpit host
+> - directory-backed and logical libvirt storage pools
+
+> [!NOTE]
+> The authoritative source for the final install flow is the Red Hat Build of
+> MicroShift host-based RPM installation model. The create-host path is only a
+> convenience layer that provisions a RHEL guest first, then applies that same
+> documented in-guest install flow.
+
+> [!NOTE]
+> The user must provide valid registry authentication data in the UI, either by
+> pasting it directly or by pointing at a local file on the host. For
+> SSH-based deployment, the user must also provide an SSH key path available on
+> the Cockpit host.
+
+## Default Operating Model
+
+- host-local Cockpit plugin with privileged backend helper
+- installer runtime under `/var/lib/cockpit-microshift/`
+- generated artifacts owned by this project, not an external orchestration repo
+- MicroShift lifecycle driven directly by:
+  - `ssh`
+  - `scp`
+  - `systemd-run`
+  - `virsh`
+  - `virt-install`
+  - `oc`
+
+Use this path when you want the Cockpit host to drive MicroShift deployment
+from the UI instead of manually preparing the host and install artifacts.
 
 ## Prerequisites
 
@@ -39,7 +73,7 @@ in-guest install flow.
 - the Cockpit host can SSH to the target host with key auth
 - the SSH user has `sudo -n` on the target host
 - the target host is RHEL 9 or RHEL 10
-- the operator supplies a valid pull secret
+- the user has valid registry authentication data
 
 Repository access can follow either pattern:
 
@@ -48,7 +82,7 @@ Repository access can follow either pattern:
     - `microshift`
     - `openshift-clients`
 - `Register and enable repositories automatically`
-  - the operator supplies:
+  - the user supplies:
     - RHSM organization ID
     - RHSM activation key
   - optional:
@@ -65,7 +99,7 @@ Additional prerequisites for the create-host path:
 - either:
   - a usable RHEL qcow2 cloud image is available locally on the Cockpit host
   - or a direct downloadable qcow2 URL is available to the Cockpit host
-- you can assign a static guest IP, gateway, and DNS servers for the new VM
+- static guest IP, gateway, and DNS servers are prepared for the new VM
 
 ## Installation
 
@@ -86,38 +120,63 @@ sudo install -m 0755 src/cockpit-microshift/microshift_backend.py /usr/share/coc
 
 Cockpit discovers the plugin on page load. No service restart is required.
 
-If Cockpit is not already running:
+Open Cockpit if it is not already running:
 
 ```bash
 sudo systemctl enable --now cockpit.socket
 ```
 
-Then open `https://<host>:9090` and select `MicroShift`.
-The landing page opens the local MicroShift cluster inventory, with links into
-the install workflow and per-cluster overview pages.
+Then open `https://<host>:9090` and navigate to `MicroShift`.
 
 ### Building the RPM
 
+Install the packaging tool once on the build host:
+
 ```bash
 sudo dnf install -y rpm-build
+```
+
+Then build from the project directory:
+
+```bash
+cd /path/to/cockpit-microshift
 ./build-rpm.sh
 ```
 
+Build output:
+
+- `rpmbuild/RPMS/noarch/cockpit-microshift-*.noarch.rpm`
+
 ### From RPM
+
+After the RPM has been built, install it from the project directory:
 
 ```bash
 sudo dnf install -y ./rpmbuild/RPMS/noarch/cockpit-microshift-*.noarch.rpm
 ```
 
-## Runtime Model
+## Backend Expectations
 
-- plugin runtime under `/var/lib/cockpit-microshift/`
-- downloaded guest images cached under `/var/lib/cockpit-microshift/image-cache/`
-- rendered config and install plan stored under the runtime work directory
-- generated kubeconfig copied back to the Cockpit host after a successful install
-- optional firewalld configuration uses the documented MicroShift trusted-source and exposed-port model
-- create-host deployments also render cloud-init inputs and a local `virt-install` plan
+- the backend writes its own runtime state under `/var/lib/cockpit-microshift/`
+- downloaded guest images are cached under `/var/lib/cockpit-microshift/image-cache/`
+- generated kubeconfig is copied back to the Cockpit host after a successful install
+- the current validated path assumes static host and guest networking
+- firewalld configuration follows the documented MicroShift trusted-source and exposed-port model
 - create-host root disks support the same `dir` and `logical` pool types used by `cockpit-openshift`
+
+> [!NOTE]
+> The plugin previews generated install inputs and provisioning artifacts
+> directly in the UI. Credential data is redacted in backend responses and
+> artifact previews.
+
+## Authoritative Sources
+
+- Red Hat Build of MicroShift 4.21 installation guide:
+  https://docs.redhat.com/en/documentation/red_hat_build_of_microshift/4.21/html-single/getting_ready_to_install_microshift/index
+- Upstream implementation:
+  https://github.com/openshift/microshift
+- Community mirror reviewed for context:
+  https://github.com/microshift-io/microshift
 
 ## Project Layout
 
@@ -129,3 +188,5 @@ sudo dnf install -y ./rpmbuild/RPMS/noarch/cockpit-microshift-*.noarch.rpm
   - local RPM build entrypoint
 - `cockpit-microshift.spec`
   - RPM packaging metadata
+- `README.md`
+  - operator-facing usage and install notes
