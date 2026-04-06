@@ -17,6 +17,7 @@ Cockpit MicroShift is a Cockpit plugin prototype for a guided MicroShift
 installation workflow onto an existing RHEL host.
 
 The current release provides:
+- a cluster inventory landing page with per-cluster overview pages
 - a wizard-style MicroShift installer UI
 - a privileged backend helper that owns the host-side install workflow
 - preflight validation over SSH
@@ -32,7 +33,11 @@ The current release provides:
 mkdir -p %{buildroot}%{_datadir}/cockpit/cockpit-microshift
 install -m 0644 src/cockpit-microshift/manifest.json %{buildroot}%{_datadir}/cockpit/cockpit-microshift/
 install -m 0644 src/cockpit-microshift/index.html %{buildroot}%{_datadir}/cockpit/cockpit-microshift/
+install -m 0644 src/cockpit-microshift/create.html %{buildroot}%{_datadir}/cockpit/cockpit-microshift/
+install -m 0644 src/cockpit-microshift/overview.html %{buildroot}%{_datadir}/cockpit/cockpit-microshift/
 install -m 0644 src/cockpit-microshift/cockpit-microshift.js %{buildroot}%{_datadir}/cockpit/cockpit-microshift/
+install -m 0644 src/cockpit-microshift/cluster-list.js %{buildroot}%{_datadir}/cockpit/cockpit-microshift/
+install -m 0644 src/cockpit-microshift/cluster-overview.js %{buildroot}%{_datadir}/cockpit/cockpit-microshift/
 install -m 0644 src/cockpit-microshift/cockpit-microshift.css %{buildroot}%{_datadir}/cockpit/cockpit-microshift/
 install -m 0755 src/cockpit-microshift/microshift_backend.py %{buildroot}%{_datadir}/cockpit/cockpit-microshift/
 install -m 0644 README.md %{buildroot}%{_datadir}/cockpit/cockpit-microshift/

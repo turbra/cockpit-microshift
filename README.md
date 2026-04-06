@@ -10,6 +10,7 @@ the Cockpit host.
 ![RHEL 9/10](https://img.shields.io/badge/RHEL-9%2F10-red)
 
 - dedicated MicroShift installer UI
+- cluster list landing page with per-cluster overview
 - host-based RPM install workflow
 - optional local libvirt/KVM guest provisioning before the in-guest install
 - optional local libvirt/KVM guest provisioning with selectable performance domains
@@ -74,8 +75,12 @@ Additional prerequisites for the create-host path:
 sudo mkdir -p /usr/share/cockpit/cockpit-microshift
 sudo install -m 0644 src/cockpit-microshift/manifest.json /usr/share/cockpit/cockpit-microshift/
 sudo install -m 0644 src/cockpit-microshift/index.html /usr/share/cockpit/cockpit-microshift/
+sudo install -m 0644 src/cockpit-microshift/create.html /usr/share/cockpit/cockpit-microshift/
+sudo install -m 0644 src/cockpit-microshift/overview.html /usr/share/cockpit/cockpit-microshift/
 sudo install -m 0644 src/cockpit-microshift/cockpit-microshift.css /usr/share/cockpit/cockpit-microshift/
 sudo install -m 0644 src/cockpit-microshift/cockpit-microshift.js /usr/share/cockpit/cockpit-microshift/
+sudo install -m 0644 src/cockpit-microshift/cluster-list.js /usr/share/cockpit/cockpit-microshift/
+sudo install -m 0644 src/cockpit-microshift/cluster-overview.js /usr/share/cockpit/cockpit-microshift/
 sudo install -m 0755 src/cockpit-microshift/microshift_backend.py /usr/share/cockpit/cockpit-microshift/
 ```
 
@@ -88,6 +93,8 @@ sudo systemctl enable --now cockpit.socket
 ```
 
 Then open `https://<host>:9090` and select `MicroShift`.
+The landing page opens the local MicroShift cluster inventory, with links into
+the install workflow and per-cluster overview pages.
 
 ### Building the RPM
 

@@ -237,6 +237,11 @@ function artifactLoadMode() {
     return state.job ? "current" : "payload";
 }
 
+function queryClusterId() {
+    var params = new URLSearchParams(window.location.search);
+    return params.get("clusterId") || "";
+}
+
 function selectedStoragePool() {
     var selected = null;
     state.availableStoragePools.forEach(function (pool) {
@@ -1293,6 +1298,28 @@ function loadOptions() {
     });
 }
 
+function loadClusterContext() {
+    var clusterId = queryClusterId();
+
+    if (!clusterId) {
+        return Promise.resolve();
+    }
+
+    return backendCommand("clusters").then(function (result) {
+        var cluster = (result.clusters || []).find(function (entry) {
+            return entry.clusterId === clusterId;
+        });
+        if (cluster && cluster.request) {
+            applyRequestToState(cluster.request);
+            state.currentStep = 1;
+            clearBackendErrors();
+            render();
+        }
+    }).catch(function () {
+        return Promise.resolve();
+    });
+}
+
 function bindEvents() {
     bindText(refs.deploymentName, "deploymentName");
     bindText(refs.hostAddress, "hostAddress");
@@ -1608,6 +1635,8 @@ document.addEventListener("DOMContentLoaded", function () {
     bindEvents();
     window.cockpitMicroshiftStart = startDeployment;
     render();
-    loadOptions();
-    refreshStatus();
+    loadOptions()
+        .then(loadClusterContext)
+        .then(refreshStatus)
+        .catch(function () {});
 });

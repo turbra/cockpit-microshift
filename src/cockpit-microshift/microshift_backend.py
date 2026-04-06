@@ -39,6 +39,9 @@ WORK_ROOT = STATE_DIR / "microshift-work"
 IMAGE_CACHE_DIR = STATE_DIR / "image-cache"
 HELPER_PATH = Path("/usr/share/cockpit/cockpit-microshift/microshift_backend.py")
 STATE_SCHEMA = "microshift-v1"
+CLUSTER_SCHEMA = "microshift-cluster-v1"
+CLUSTER_METADATA_NAME = "cluster-metadata.json"
+CLUSTER_REQUEST_NAME = "request-summary.json"
 LIBVIRT_MEDIA_DIR = Path("/var/lib/libvirt/images")
 DEFAULT_BRIDGE_NAME = "bridge0"
 DEFAULT_VM_SSH_USER = "microshift"
@@ -841,6 +844,124 @@ def public_request_view(request: dict) -> dict:
     return data
 
 
+def health_from_nodes_json(output: str) -> dict:
+    result = {
+        "available": False,
+        "apiReachable": False,
+        "readyNodes": 0,
+        "totalNodes": 0,
+        "message": "",
+    }
+    try:
+        data = json.loads(output)
+    except json.JSONDecodeError:
+        result["message"] = "Unable to parse node status from oc output"
+        return result
+
+    items = data.get("items", [])
+    ready_nodes = 0
+    for node in items:
+        conditions = {
+            entry.get("type"): entry.get("status")
+            for entry in node.get("status", {}).get("conditions", [])
+        }
+        if conditions.get("Ready") == "True":
+            ready_nodes += 1
+
+    result["apiReachable"] = True
+    result["readyNodes"] = ready_nodes
+    result["totalNodes"] = len(items)
+    result["available"] = ready_nodes > 0 and len(items) > 0
+    return result
+
+
+def cluster_health(cluster: dict) -> dict:
+    result = {
+        "available": False,
+        "apiReachable": False,
+        "readyNodes": 0,
+        "totalNodes": 0,
+        "message": "",
+    }
+    kubeconfig_path = Path(cluster.get("kubeconfigPath", ""))
+    remote_kubeconfig = ((cluster.get("installAccess") or {}).get("remoteKubeconfigPath") or "").strip()
+    host = cluster.get("host") or {}
+    oc = command_path("oc") if command_available("oc") else ""
+
+    if kubeconfig_path.exists() and oc:
+        proc = run(oc, "--kubeconfig", str(kubeconfig_path), "--request-timeout=5s", "get", "nodes", "-o", "json", check=False)
+        if proc.returncode == 0:
+            return health_from_nodes_json(proc.stdout)
+        result["message"] = (proc.stderr or proc.stdout or "Unable to reach the MicroShift API").strip()
+
+    if remote_kubeconfig and host.get("address") and host.get("sshUser") and host.get("sshPrivateKeyFile"):
+        remote_command = "sudo -n bash -lc " + shlex.quote(
+            f"oc --kubeconfig {shlex.quote(remote_kubeconfig)} --request-timeout=5s get nodes -o json"
+        )
+        proc = run(*(ssh_base_argv({"host": host}) + [remote_command]), check=False)
+        if proc.returncode == 0:
+            return health_from_nodes_json(proc.stdout)
+        result["message"] = (proc.stderr or proc.stdout or "Unable to reach the MicroShift API").strip()
+
+    if not result["message"]:
+        if cluster.get("status") == "failed" and cluster.get("error"):
+            result["message"] = cluster["error"]
+        elif not kubeconfig_path.exists() and not remote_kubeconfig:
+            result["message"] = "No kubeconfig recorded"
+        else:
+            result["message"] = "Unable to reach the MicroShift API"
+    return result
+
+
+def discover_clusters() -> list[dict]:
+    backfill_cluster_record_from_runtime()
+    clusters: list[dict] = []
+    if not WORK_ROOT.exists():
+        return clusters
+
+    for path in sorted([entry for entry in WORK_ROOT.iterdir() if entry.is_dir()]):
+        metadata_path = cluster_metadata_path(path)
+        request_path = cluster_request_summary_path(path)
+        metadata: dict | None = None
+        request: dict | None = None
+
+        if request_path.exists():
+            try:
+                request = json.loads(request_path.read_text(encoding="utf-8"))
+            except Exception:
+                request = None
+
+        if metadata_path.exists():
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except Exception:
+                metadata = None
+
+        if not metadata and request:
+            metadata = cluster_record_from_request(request)
+
+        if not metadata:
+            continue
+
+        cluster = dict(metadata)
+        if request:
+            cluster["request"] = request
+
+        if (
+            cluster.get("deploymentTargetPattern") == "create-host"
+            and cluster.get("vmName")
+            and not domain_exists(cluster.get("vmName", ""))
+        ):
+            prune_cluster_runtime(path, cluster)
+            continue
+
+        cluster["health"] = cluster_health(cluster)
+        clusters.append(cluster)
+
+    clusters.sort(key=lambda item: item.get("createdAt", ""), reverse=True)
+    return clusters
+
+
 def validate_local_payload(payload: dict) -> tuple[dict, list[str]]:
     errors: list[str] = []
 
@@ -1290,6 +1411,96 @@ def generated_dir(request: dict) -> Path:
     return work_dir(request) / "generated"
 
 
+def cluster_metadata_path(path: Path) -> Path:
+    return path / CLUSTER_METADATA_NAME
+
+
+def cluster_request_summary_path(path: Path) -> Path:
+    return path / CLUSTER_REQUEST_NAME
+
+
+def cluster_id_from_request(request: dict) -> str:
+    deployment_name = str(request.get("deploymentName", "")).strip()
+    base_domain = str((request.get("config") or {}).get("baseDomain", "")).strip()
+    if deployment_name and base_domain:
+        return f"{deployment_name}.{base_domain}"
+    return deployment_name
+
+
+def cluster_record_from_request(request: dict, state: dict | None = None) -> dict:
+    state = state or {}
+    provisioning = request.get("provisioning", {}) or {}
+    install_access = state.get("installAccess", {}) or {}
+    cluster_id = cluster_id_from_request(request)
+    kubeconfig_path = install_access.get("kubeconfigPath") or str(generated_dir(request) / "kubeconfig")
+    return {
+        "schema": CLUSTER_SCHEMA,
+        "clusterId": cluster_id,
+        "clusterName": request.get("deploymentName", ""),
+        "baseDomain": (request.get("config") or {}).get("baseDomain", ""),
+        "topology": "sno",
+        "nodeCount": 1,
+        "deploymentTargetPattern": request.get("deploymentTargetPattern", ""),
+        "host": request.get("host", {}),
+        "provider": request.get("provider", ""),
+        "region": request.get("region", ""),
+        "microshiftVersion": request.get("microshiftVersion", ""),
+        "owner": request.get("owner", discover_owner()),
+        "createdAt": request.get("createdAt", current_timestamp()),
+        "updatedAt": current_timestamp(),
+        "status": state.get("status", "starting"),
+        "returnCode": state.get("returnCode"),
+        "error": state.get("error", ""),
+        "vmName": provisioning.get("vmName", ""),
+        "nodeVcpus": provisioning.get("nodeVcpus", 0),
+        "memoryMb": provisioning.get("memoryMb", 0),
+        "kubeconfigPath": kubeconfig_path,
+        "installAccess": install_access,
+        "request": public_request_view(request),
+    }
+
+
+def write_cluster_record(request: dict, state: dict | None = None) -> None:
+    path = work_dir(request)
+    ensure_private_dir(path)
+    write_private_file(cluster_request_summary_path(path), json.dumps(public_request_view(request), indent=2, sort_keys=True))
+    write_private_file(cluster_metadata_path(path), json.dumps(cluster_record_from_request(request, state), indent=2, sort_keys=True))
+
+
+def backfill_cluster_record_from_runtime() -> None:
+    if not REQUEST_FILE.exists():
+        return
+    try:
+        request = json.loads(REQUEST_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    path = cluster_metadata_path(work_dir(request))
+    if path.exists():
+        return
+    write_cluster_record(request, load_state())
+
+
+def domain_exists(name: str) -> bool:
+    if not name or not command_available("virsh"):
+        return False
+    return run("virsh", "dominfo", name, check=False).returncode == 0
+
+
+def prune_cluster_runtime(path: Path, cluster: dict) -> None:
+    request = cluster.get("request") or {}
+    deployment_id = str(request.get("deploymentId", "")).strip()
+
+    if path.exists():
+        shutil.rmtree(path, ignore_errors=True)
+
+    if job_running(load_state()):
+        return
+
+    current_request = current_request_view()
+    if current_request and deployment_id and current_request.get("deploymentId") == deployment_id:
+        clear_runtime_state()
+
+
 def config_path(request: dict) -> Path:
     return generated_dir(request) / "config.yaml"
 
@@ -1629,7 +1840,7 @@ def validate_microshift(request: dict) -> None:
         """
 for _ in $(seq 1 60); do
     if oc --kubeconfig /var/lib/microshift/resources/kubeadmin/kubeconfig get nodes -o json >/tmp/microshift-nodes.json 2>/tmp/microshift-nodes.err; then
-        python3 - <<'PY'
+        if python3 - <<'PY'
 import json
 from pathlib import Path
 data = json.loads(Path('/tmp/microshift-nodes.json').read_text())
@@ -1639,6 +1850,9 @@ for node in data.get('items', []):
         raise SystemExit(0)
 raise SystemExit(1)
 PY
+        then
+            exit 0
+        fi
     fi
     sleep 10
 done
@@ -1684,6 +1898,10 @@ def handle_options() -> int:
             "running": job_running(load_state()),
         }
     )
+
+
+def handle_clusters() -> int:
+    return json_response({"ok": True, "clusters": discover_clusters(), "running": job_running(load_state())})
 
 
 def handle_artifacts(payload_b64: str | None, current: bool) -> int:
@@ -1732,6 +1950,7 @@ def handle_start(payload_b64: str) -> int:
     unit_name = f"cockpit-microshift-{dt.datetime.now():%Y%m%d%H%M%S}"
     state = record_request_summary(request, unit_name)
     save_state(state)
+    write_cluster_record(request, state)
 
     proc = run(
         "systemd-run",
@@ -1751,10 +1970,12 @@ def handle_start(payload_b64: str) -> int:
         state["endedAt"] = current_timestamp()
         state["error"] = proc.stderr.strip() or proc.stdout.strip() or "Failed to start MicroShift job"
         save_state(state)
+        write_cluster_record(request, state)
         return json_response({"ok": False, "errors": [state["error"]]})
 
     state["status"] = "running"
     save_state(state)
+    write_cluster_record(request, state)
     return json_response({"ok": True, "unitName": unit_name, "request": public_request_view(request)})
 
 
@@ -1817,6 +2038,7 @@ rm -f {shlex.quote(remote_pull_secret)} {shlex.quote(remote_config)}
         state = load_state()
         state["installAccess"] = install_access(request, local_kubeconfig, remote_kubeconfig, server_name)
         save_state(state)
+        write_cluster_record(request, state)
         log_step("MicroShift installation completed successfully")
     except subprocess.CalledProcessError as exc:  # pragma: no cover
         message = format_process_error(exc)
@@ -1837,6 +2059,7 @@ rm -f {shlex.quote(remote_pull_secret)} {shlex.quote(remote_config)}
         }
     )
     save_state(state)
+    write_cluster_record(request, state)
     return rc
 
 
@@ -1845,15 +2068,19 @@ def handle_run_job(unit_name: str) -> int:
     return run_install_job(unit_name)
 
 
+def current_request_view() -> dict | None:
+    if not REQUEST_FILE.exists():
+        return None
+    try:
+        return public_request_view(json.loads(REQUEST_FILE.read_text(encoding="utf-8")))
+    except Exception:
+        return None
+
+
 def handle_status() -> int:
     state = load_state()
     service_status = unit_status(state.get("unitName", ""))
-    request = None
-    if REQUEST_FILE.exists():
-        try:
-            request = public_request_view(json.loads(REQUEST_FILE.read_text(encoding="utf-8")))
-        except Exception:
-            request = None
+    request = current_request_view()
     log_lines = tail_log()
     return json_response(
         {
@@ -1899,6 +2126,7 @@ def main() -> int:
     run_job = subparsers.add_parser("run-job")
     run_job.add_argument("--unit-name", required=True)
 
+    subparsers.add_parser("clusters")
     subparsers.add_parser("status")
     subparsers.add_parser("cancel")
 
@@ -1914,6 +2142,8 @@ def main() -> int:
             return handle_start(args.payload_b64)
         if args.command == "run-job":
             return handle_run_job(args.unit_name)
+        if args.command == "clusters":
+            return handle_clusters()
         if args.command == "status":
             return handle_status()
         if args.command == "cancel":
