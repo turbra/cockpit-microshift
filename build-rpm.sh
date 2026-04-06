@@ -18,7 +18,7 @@ mkdir -p "${WORK}/${TARBALL_DIR}/src/cockpit-microshift"
 mkdir -p "${WORK}/${TARBALL_DIR}/docs"
 cp "${SCRIPT_DIR}"/{README.md,LICENSE} "${WORK}/${TARBALL_DIR}/"
 cp "${SCRIPT_DIR}/docs/microshift-support.md" "${WORK}/${TARBALL_DIR}/docs/"
-cp "${PLUGIN_SRC_DIR}"/{manifest.json,index.html,cockpit-microshift.css,cockpit-microshift.js,microshift_backend.py} \
+cp "${PLUGIN_SRC_DIR}"/{manifest.json,index.html,create.html,overview.html,cockpit-microshift.css,cockpit-microshift.js,cluster-list.js,cluster-overview.js,microshift_backend.py} \
    "${WORK}/${TARBALL_DIR}/src/cockpit-microshift/"
 tar czf "${BUILD_ROOT}/SOURCES/${SPEC_NAME}-${VERSION}.tar.gz" -C "${WORK}" "${TARBALL_DIR}"
 rm -rf "${WORK}"
