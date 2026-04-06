@@ -237,9 +237,28 @@ function artifactLoadMode() {
     return state.job ? "current" : "payload";
 }
 
+function clusterIdFromRequest(request) {
+    if (!request || !request.deploymentName || !request.config || !request.config.baseDomain) {
+        return "";
+    }
+    return request.deploymentName + "." + request.config.baseDomain;
+}
+
 function queryClusterId() {
     var params = new URLSearchParams(window.location.search);
     return params.get("clusterId") || "";
+}
+
+function setPageClusterId(clusterId) {
+    var url;
+
+    if (!clusterId || !window.history || !window.history.replaceState) {
+        return;
+    }
+
+    url = new URL(window.location.href);
+    url.searchParams.set("clusterId", clusterId);
+    window.history.replaceState(null, "", url.toString());
 }
 
 function statusRequestAppliesToPage(status) {
@@ -1165,6 +1184,8 @@ function goBack() {
 }
 
 function startDeployment() {
+    var submittedPayload = payload();
+
     clearStartResponseTimer();
     appendClientLog("Install MicroShift clicked.");
     setTransientStatus("Validating the final deployment request.", "Checking the request before any VM or host action begins.");
@@ -1186,7 +1207,9 @@ function startDeployment() {
         render();
     }, 3000);
     render();
-    backendCommand("start", ["--payload-b64", encodePayload(payload())]).then(function (result) {
+    backendCommand("start", ["--payload-b64", encodePayload(submittedPayload)]).then(function (result) {
+        var startedClusterId;
+
         clearStartResponseTimer();
         if (!result.ok) {
             state.backendErrors = result.errors || ["MicroShift deployment start failed"];
@@ -1196,6 +1219,10 @@ function startDeployment() {
             return;
         }
         state.currentStep = 4;
+        startedClusterId = clusterIdFromRequest(result.request || submittedPayload);
+        if (startedClusterId) {
+            setPageClusterId(startedClusterId);
+        }
         appendClientLog("Backend accepted the deployment request" + (result.unitName ? " as unit " + result.unitName : "") + ".");
         setTransientStatus("The backend accepted the deployment request.", "Waiting for runtime state, VM creation activity, and backend execution logs.");
         render();
