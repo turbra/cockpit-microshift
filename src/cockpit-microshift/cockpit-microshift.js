@@ -8,7 +8,7 @@ var steps = [
     {
         id: 1,
         label: "Deployment details",
-        description: "Provide the target host connection details, the MicroShift release stream, and registry credentials."
+        description: "Choose an existing host or a local libvirt guest, then provide the release, access, and registry credentials."
     },
     {
         id: 2,
@@ -32,18 +32,39 @@ var state = createInitialState();
 var pollTimer = null;
 var artifactPreviewTimer = null;
 var lastArtifactPreviewKey = "";
+var startResponseTimer = null;
 
 function createInitialState() {
     return {
         currentStep: 1,
         yamlMode: false,
         yamlPaneWidth: 560,
+        targetPattern: "existing-host",
         deploymentName: "",
         microshiftVersion: "4.21",
         hostAddress: "",
         sshPort: 22,
-        sshUser: "",
+        sshUser: "microshift",
         sshPrivateKeyFile: "",
+        vmName: "",
+        imageSource: "local",
+        baseImagePath: "",
+        imageDownloadUrl: "",
+        imageCacheName: "",
+        storagePool: "",
+        bridgeName: "",
+        guestIpCidr: "",
+        guestGateway: "",
+        guestDnsServers: "",
+        guestNodeVcpus: 4,
+        guestNodeMemoryMb: 8192,
+        guestDiskSizeGb: 40,
+        performanceDomain: "none",
+        packageAccessMode: "preconfigured",
+        rhsmOrganizationId: "",
+        rhsmActivationKey: "",
+        rhsmReleaseLock: "",
+        rhsmExtraRepositories: "",
         pullSecretValue: "",
         pullSecretFile: "",
         manageFirewall: true,
@@ -63,7 +84,12 @@ function createInitialState() {
         currentArtifactName: "",
         backendErrors: [],
         fieldErrors: {},
-        job: null
+        job: null,
+        transientStatusSummary: "",
+        transientCurrentTask: "",
+        clientLog: [],
+        availableStoragePools: [],
+        availableBridges: []
     };
 }
 
@@ -132,6 +158,7 @@ function splitList(value) {
 
 function payload() {
     return {
+        deploymentTargetPattern: state.targetPattern,
         deploymentName: state.deploymentName.trim(),
         microshiftVersion: state.microshiftVersion,
         host: {
@@ -142,6 +169,29 @@ function payload() {
         },
         pullSecretValue: state.pullSecretValue.trim(),
         pullSecretFile: state.pullSecretFile.trim(),
+        packageAccess: {
+            mode: state.packageAccessMode,
+            organizationId: state.rhsmOrganizationId.trim(),
+            activationKey: state.rhsmActivationKey.trim(),
+            releaseLock: state.rhsmReleaseLock.trim(),
+            extraRepositories: splitList(state.rhsmExtraRepositories)
+        },
+        provisioning: {
+            vmName: state.vmName.trim(),
+            imageSource: state.imageSource,
+            baseImagePath: state.baseImagePath.trim(),
+            imageDownloadUrl: state.imageDownloadUrl.trim(),
+            imageCacheName: state.imageCacheName.trim(),
+            storagePool: state.storagePool,
+            bridgeName: state.bridgeName,
+            guestIpCidr: state.guestIpCidr.trim(),
+            guestGateway: state.guestGateway.trim(),
+            dnsServers: splitList(state.guestDnsServers),
+            nodeVcpus: parseInt(state.guestNodeVcpus, 10) || 0,
+            memoryMb: parseInt(state.guestNodeMemoryMb, 10) || 0,
+            diskSizeGb: parseInt(state.guestDiskSizeGb, 10) || 0,
+            performanceDomain: state.performanceDomain
+        },
         prerequisites: {
             manageFirewall: !!state.manageFirewall,
             exposeApiPort: !!state.exposeApiPort,
@@ -187,8 +237,57 @@ function artifactLoadMode() {
     return state.job ? "current" : "payload";
 }
 
+function selectedStoragePool() {
+    var selected = null;
+    state.availableStoragePools.forEach(function (pool) {
+        if (pool.name === state.storagePool) {
+            selected = pool;
+        }
+    });
+    return selected;
+}
+
 function clearBackendErrors() {
     state.backendErrors = [];
+}
+
+function setTransientStatus(summary, currentTask) {
+    state.transientStatusSummary = summary || "";
+    state.transientCurrentTask = currentTask || "";
+}
+
+function clearTransientStatus() {
+    setTransientStatus("", "");
+}
+
+function appendClientLog(message) {
+    state.clientLog.push("[UI] " + message);
+    state.clientLog = state.clientLog.slice(-40);
+}
+
+function clearStartResponseTimer() {
+    if (startResponseTimer) {
+        window.clearTimeout(startResponseTimer);
+        startResponseTimer = null;
+    }
+}
+
+function waitForRuntimeState(attemptsRemaining) {
+    return refreshStatus().then(function () {
+        if (state.job) {
+            return;
+        }
+        if (attemptsRemaining <= 0) {
+            state.backendErrors = ["The deployment request was submitted, but no backend runtime state or VM creation activity was detected."];
+            appendClientLog("No backend runtime state or VM creation activity was detected after the request was submitted.");
+            setTransientStatus("The deployment did not enter an observable running state.", "No VM creation or backend execution log was detected.");
+            render();
+            return;
+        }
+        window.setTimeout(function () {
+            waitForRuntimeState(attemptsRemaining - 1);
+        }, 1000);
+    }).catch(function () {});
 }
 
 function setFieldError(name, hasError) {
@@ -199,15 +298,32 @@ function validateStep1() {
     var errors = [];
     var sshPort = parseInt(state.sshPort, 10) || 0;
     var hasPullSecret = !!(state.pullSecretValue.trim() || state.pullSecretFile.trim());
+    var requiresActivationKey = state.packageAccessMode === "activation-key";
+    var requiresExistingHost = state.targetPattern === "existing-host";
+    var requiresCreateHost = state.targetPattern === "create-host";
+    var pool = selectedStoragePool();
+    var invalidStoragePool = requiresCreateHost && (!state.storagePool || !pool || !pool.supported);
 
     setFieldError("deploymentName", !state.deploymentName.trim());
     setFieldError("microshiftVersion", !state.microshiftVersion.trim());
-    setFieldError("hostAddress", !state.hostAddress.trim());
-    setFieldError("sshPort", sshPort <= 0 || sshPort > 65535);
+    setFieldError("hostAddress", requiresExistingHost && !state.hostAddress.trim());
+    setFieldError("sshPort", requiresExistingHost && (sshPort <= 0 || sshPort > 65535));
     setFieldError("sshUser", !state.sshUser.trim());
     setFieldError("sshPrivateKeyFile", !state.sshPrivateKeyFile.trim());
+    setFieldError("vmName", requiresCreateHost && !state.vmName.trim());
+    setFieldError("baseImagePath", requiresCreateHost && state.imageSource === "local" && !state.baseImagePath.trim());
+    setFieldError("imageDownloadUrl", requiresCreateHost && state.imageSource === "download" && !state.imageDownloadUrl.trim());
+    setFieldError("storagePool", invalidStoragePool);
+    setFieldError("bridgeName", requiresCreateHost && !state.bridgeName);
+    setFieldError("guestIpCidr", requiresCreateHost && !state.guestIpCidr.trim());
+    setFieldError("guestGateway", requiresCreateHost && !state.guestGateway.trim());
+    setFieldError("guestNodeVcpus", requiresCreateHost && ((parseInt(state.guestNodeVcpus, 10) || 0) <= 0));
+    setFieldError("guestNodeMemoryMb", requiresCreateHost && ((parseInt(state.guestNodeMemoryMb, 10) || 0) <= 0));
+    setFieldError("guestDiskSizeGb", requiresCreateHost && ((parseInt(state.guestDiskSizeGb, 10) || 0) <= 0));
     setFieldError("pullSecretValue", !hasPullSecret);
     setFieldError("pullSecretFile", !hasPullSecret);
+    setFieldError("rhsmOrganizationId", requiresActivationKey && !state.rhsmOrganizationId.trim());
+    setFieldError("rhsmActivationKey", requiresActivationKey && !state.rhsmActivationKey.trim());
 
     if (!state.deploymentName.trim()) {
         errors.push("Deployment name");
@@ -215,10 +331,10 @@ function validateStep1() {
     if (!state.microshiftVersion.trim()) {
         errors.push("MicroShift version");
     }
-    if (!state.hostAddress.trim()) {
+    if (requiresExistingHost && !state.hostAddress.trim()) {
         errors.push("Target host address");
     }
-    if (sshPort <= 0 || sshPort > 65535) {
+    if (requiresExistingHost && (sshPort <= 0 || sshPort > 65535)) {
         errors.push("SSH port");
     }
     if (!state.sshUser.trim()) {
@@ -227,8 +343,44 @@ function validateStep1() {
     if (!state.sshPrivateKeyFile.trim()) {
         errors.push("SSH private key file");
     }
+    if (requiresCreateHost && !state.vmName.trim()) {
+        errors.push("VM name");
+    }
+    if (requiresCreateHost && state.imageSource === "local" && !state.baseImagePath.trim()) {
+        errors.push("Base image path");
+    }
+    if (requiresCreateHost && state.imageSource === "download" && !state.imageDownloadUrl.trim()) {
+        errors.push("Image download URL");
+    }
+    if (invalidStoragePool) {
+        errors.push("Storage pool");
+    }
+    if (requiresCreateHost && !state.bridgeName) {
+        errors.push("Bridge");
+    }
+    if (requiresCreateHost && !state.guestIpCidr.trim()) {
+        errors.push("Guest IP/CIDR");
+    }
+    if (requiresCreateHost && !state.guestGateway.trim()) {
+        errors.push("Guest gateway");
+    }
+    if (requiresCreateHost && ((parseInt(state.guestNodeVcpus, 10) || 0) <= 0)) {
+        errors.push("Guest vCPU count");
+    }
+    if (requiresCreateHost && ((parseInt(state.guestNodeMemoryMb, 10) || 0) <= 0)) {
+        errors.push("Guest memory");
+    }
+    if (requiresCreateHost && ((parseInt(state.guestDiskSizeGb, 10) || 0) <= 0)) {
+        errors.push("Guest disk size");
+    }
     if (!hasPullSecret) {
         errors.push("Pull secret");
+    }
+    if (requiresActivationKey && !state.rhsmOrganizationId.trim()) {
+        errors.push("RHSM organization ID");
+    }
+    if (requiresActivationKey && !state.rhsmActivationKey.trim()) {
+        errors.push("RHSM activation key");
     }
 
     return errors;
@@ -355,7 +507,9 @@ function applyRequestToState(request) {
     var host = request.host || {};
     var prerequisites = request.prerequisites || {};
     var config = request.config || {};
+    var provisioning = request.provisioning || {};
 
+    state.targetPattern = request.deploymentTargetPattern || state.targetPattern;
     state.deploymentName = request.deploymentName || state.deploymentName;
     state.microshiftVersion = request.microshiftVersion || state.microshiftVersion;
     state.hostAddress = host.address || state.hostAddress;
@@ -363,11 +517,30 @@ function applyRequestToState(request) {
     state.sshUser = host.sshUser || state.sshUser;
     state.sshPrivateKeyFile = host.sshPrivateKeyFile || state.sshPrivateKeyFile;
     state.pullSecretFile = request.secretInputs && request.secretInputs.pullSecretFile ? request.secretInputs.pullSecretFile : state.pullSecretFile;
+    state.packageAccessMode = request.packageAccess && request.packageAccess.mode ? request.packageAccess.mode : state.packageAccessMode;
+    state.rhsmOrganizationId = request.packageAccess && request.packageAccess.organizationId ? request.packageAccess.organizationId : state.rhsmOrganizationId;
+    state.rhsmActivationKey = request.packageAccess && request.packageAccess.activationKey ? request.packageAccess.activationKey : state.rhsmActivationKey;
+    state.rhsmReleaseLock = request.packageAccess && request.packageAccess.releaseLock ? request.packageAccess.releaseLock : state.rhsmReleaseLock;
+    state.rhsmExtraRepositories = request.packageAccess && request.packageAccess.extraRepositories ? request.packageAccess.extraRepositories.join("\n") : state.rhsmExtraRepositories;
     state.manageFirewall = prerequisites.manageFirewall !== false;
     state.exposeApiPort = prerequisites.exposeApiPort !== false;
     state.exposeIngress = prerequisites.exposeIngress !== false;
     state.exposeNodePorts = !!prerequisites.exposeNodePorts;
     state.exposeMdns = !!prerequisites.exposeMdns;
+    state.vmName = provisioning.vmName || state.vmName;
+    state.imageSource = provisioning.imageSource || state.imageSource;
+    state.baseImagePath = provisioning.baseImagePath || state.baseImagePath;
+    state.imageDownloadUrl = provisioning.imageDownloadUrl || state.imageDownloadUrl;
+    state.imageCacheName = provisioning.imageCacheName || state.imageCacheName;
+    state.storagePool = provisioning.storagePool || state.storagePool;
+    state.bridgeName = provisioning.bridgeName || state.bridgeName;
+    state.guestIpCidr = provisioning.guestIpCidr || state.guestIpCidr;
+    state.guestGateway = provisioning.guestGateway || state.guestGateway;
+    state.guestDnsServers = (provisioning.dnsServers || []).join(", ");
+    state.guestNodeVcpus = provisioning.nodeVcpus || state.guestNodeVcpus;
+    state.guestNodeMemoryMb = provisioning.memoryMb || state.guestNodeMemoryMb;
+    state.guestDiskSizeGb = provisioning.diskSizeGb || state.guestDiskSizeGb;
+    state.performanceDomain = provisioning.performanceDomain || state.performanceDomain;
     state.baseDomain = config.baseDomain || state.baseDomain;
     state.hostnameOverride = config.hostnameOverride || state.hostnameOverride;
     state.nodeIP = config.nodeIP || state.nodeIP;
@@ -432,11 +605,13 @@ function renderReview() {
         {
             title: "Deployment target",
             rows: [
+                ["Target pattern", state.targetPattern === "existing-host" ? "Existing RHEL host" : "Create and provision a new host"],
                 ["Deployment name", state.deploymentName.trim() || "Not set"],
                 ["MicroShift version", state.microshiftVersion || "Not set"],
-                ["Target host", state.hostAddress.trim() || "Not set"],
-                ["SSH", (state.sshUser.trim() || "Not set") + " / port " + String(parseInt(state.sshPort, 10) || 0)],
-                ["Pull secret", state.pullSecretValue.trim() ? "Pasted into form" : (state.pullSecretFile.trim() || "Not set")]
+                ["Target host", state.targetPattern === "existing-host" ? (state.hostAddress.trim() || "Not set") : (state.guestIpCidr.trim() || "Will be assigned from guest IP/CIDR")],
+                ["SSH", (state.sshUser.trim() || "Not set") + " / port " + String(state.targetPattern === "existing-host" ? (parseInt(state.sshPort, 10) || 0) : 22)],
+                ["Pull secret", state.pullSecretValue.trim() ? "Pasted into form" : (state.pullSecretFile.trim() || "Not set")],
+                ["Package access", state.packageAccessMode === "activation-key" ? "Automatic RHSM registration" : "Preconfigured repositories"]
             ]
         },
         {
@@ -463,6 +638,37 @@ function renderReview() {
             ]
         }
     ];
+
+    if (state.targetPattern === "create-host") {
+        groups.splice(1, 0, {
+            title: "Local VM provisioning",
+            rows: [
+                ["VM name", state.vmName.trim() || "Not set"],
+                ["Image source", state.imageSource === "download" ? "Download to Cockpit host" : "Use local image"],
+                ["RHEL cloud image", state.imageSource === "download" ? (state.imageDownloadUrl.trim() || "Not set") : (state.baseImagePath.trim() || "Not set")],
+                ["Cached image name", state.imageSource === "download" ? (state.imageCacheName.trim() || "Auto from URL") : "Not used"],
+                ["Storage pool", state.storagePool || "Not set"],
+                ["Bridge", state.bridgeName || "Not set"],
+                ["Guest IP/CIDR", state.guestIpCidr.trim() || "Not set"],
+                ["Guest gateway", state.guestGateway.trim() || "Not set"],
+                ["Guest DNS servers", splitList(state.guestDnsServers).join(", ") || "Not set"],
+                ["Guest sizing", String(parseInt(state.guestNodeVcpus, 10) || 0) + " vCPU / " + String(parseInt(state.guestNodeMemoryMb, 10) || 0) + " MiB / " + String(parseInt(state.guestDiskSizeGb, 10) || 0) + " GiB"],
+                ["Performance domain", state.performanceDomain || "none"]
+            ]
+        });
+    }
+    if (state.packageAccessMode === "activation-key") {
+        groups.splice(state.targetPattern === "create-host" ? 2 : 1, 0, {
+            title: "Package access",
+            rows: [
+                ["Repository access model", "Automatic RHSM registration"],
+                ["Organization ID", state.rhsmOrganizationId.trim() || "Not set"],
+                ["Activation key", state.rhsmActivationKey.trim() ? "Provided" : "Not set"],
+                ["Release lock", state.rhsmReleaseLock.trim() || "Not set"],
+                ["Additional repositories", splitList(state.rhsmExtraRepositories).join(", ") || "None"]
+            ]
+        });
+    }
 
     refs.reviewSections.innerHTML = "";
     groups.forEach(function (group) {
@@ -504,11 +710,12 @@ function renderJob() {
     var stateData = state.job ? state.job.state || {} : {};
     var status = stateData.status || "";
     var summary;
+    var logLines;
 
     if (!state.job) {
-        refs.jobStatusSummary.textContent = "No deployment has been started yet.";
-        refs.jobCurrentTask.textContent = "";
-        refs.jobLog.textContent = "No log output yet.";
+        refs.jobStatusSummary.textContent = state.transientStatusSummary || "No deployment has been started yet.";
+        refs.jobCurrentTask.textContent = state.transientCurrentTask || "";
+        refs.jobLog.textContent = state.clientLog.length ? state.clientLog.join("\n") : "No log output yet.";
         refs.installAccessList.innerHTML = "";
         refs.installAccessCard.hidden = true;
         return;
@@ -521,9 +728,14 @@ function renderJob() {
 
     refs.jobStatusSummary.textContent = summary;
     refs.jobCurrentTask.textContent = state.job.currentTask || "";
-    refs.jobLog.textContent = state.job.logTail && state.job.logTail.length
-        ? state.job.logTail.join("\n")
-        : "No log output yet.";
+    logLines = [];
+    if (state.clientLog.length) {
+        logLines = logLines.concat(state.clientLog);
+    }
+    if (state.job.logTail && state.job.logTail.length) {
+        logLines = logLines.concat(state.job.logTail);
+    }
+    refs.jobLog.textContent = logLines.length ? logLines.join("\n") : "No log output yet.";
 
     refs.installAccessList.innerHTML = "";
     if (stateData.installAccess) {
@@ -589,6 +801,18 @@ function renderFieldValidation() {
         "sshPort",
         "sshUser",
         "sshPrivateKeyFile",
+        "vmName",
+        "baseImagePath",
+        "imageDownloadUrl",
+        "storagePool",
+        "bridgeName",
+        "guestIpCidr",
+        "guestGateway",
+        "guestNodeVcpus",
+        "guestNodeMemoryMb",
+        "guestDiskSizeGb",
+        "rhsmOrganizationId",
+        "rhsmActivationKey",
         "pullSecretValue",
         "pullSecretFile",
         "baseDomain",
@@ -613,7 +837,7 @@ function renderFieldValidation() {
 
 function renderValidationAlert() {
     var errors = currentStepErrors();
-    refs.validationAlert.hidden = errors.length === 0 || state.currentStep === 4;
+    refs.validationAlert.hidden = errors.length === 0;
     refs.validationAlertBody.textContent = refs.validationAlert.hidden
         ? ""
         : "The following fields are invalid or missing: " + errors.join(", ") + ".";
@@ -632,22 +856,55 @@ function renderPreflightAlert() {
         : "The following checks failed or are incomplete: " + backendErrors.join(", ") + ".";
 }
 
+function renderProvisioningOptions() {
+    refs.storagePool.innerHTML = state.availableStoragePools.map(function (pool) {
+        var label = pool.displayName || pool.name;
+        return '<option value="' + escapeHtml(pool.name) + '"' + (pool.supported ? "" : " disabled") + ">" + escapeHtml(label + (pool.supported ? "" : " (unsupported)")) + "</option>";
+    }).join("");
+    refs.bridgeName.innerHTML = state.availableBridges.map(function (bridge) {
+        return '<option value="' + escapeHtml(bridge) + '">' + escapeHtml(bridge) + "</option>";
+    }).join("");
+
+    if (state.storagePool && state.availableStoragePools.some(function (pool) { return pool.name === state.storagePool; })) {
+        refs.storagePool.value = state.storagePool;
+    }
+    if (state.bridgeName && state.availableBridges.some(function (bridge) { return bridge === state.bridgeName; })) {
+        refs.bridgeName.value = state.bridgeName;
+    }
+}
+
 function renderFooter() {
     var onFinalStep = state.currentStep === 4;
     var running = state.job && state.job.running;
     var status = state.job && state.job.state ? state.job.state.status : "";
     var stoppedOrComplete = status === "succeeded" || status === "failed" || status === "canceled";
+    var canAdvance = currentStepErrors().length === 0;
 
     refs.backButton.hidden = state.currentStep === 1;
     refs.backButton.disabled = running;
     refs.nextButton.hidden = onFinalStep || !!running;
-    refs.nextButton.disabled = currentStepErrors().length > 0;
+    refs.nextButton.disabled = !canAdvance || onFinalStep || !!running;
+    refs.nextButton.style.display = onFinalStep || running ? "none" : "";
     refs.deployButton.hidden = !onFinalStep || !!running || status === "succeeded";
-    refs.deployButton.disabled = overallErrors().length > 0 || !!running || status === "succeeded";
+    refs.deployButton.disabled = !!running || status === "succeeded";
+    refs.deployButton.style.display = !onFinalStep || running || status === "succeeded" ? "none" : "";
     refs.stopButton.hidden = !running;
     refs.stopButton.disabled = !running;
     refs.cancelButton.textContent = stoppedOrComplete ? "Done" : "Cancel";
     refs.cancelButton.disabled = running;
+}
+
+function revealBlockingState() {
+    render();
+    window.requestAnimationFrame(function () {
+        if (!refs.validationAlert.hidden) {
+            refs.validationAlert.scrollIntoView({ behavior: "smooth", block: "center" });
+            return;
+        }
+        if (!refs.preflightAlert.hidden) {
+            refs.preflightAlert.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+    });
 }
 
 function renderYamlPane() {
@@ -665,6 +922,26 @@ function render() {
     refs.sshPort.value = String(state.sshPort);
     refs.sshUser.value = state.sshUser;
     refs.sshPrivateKeyFile.value = state.sshPrivateKeyFile;
+    refs.vmName.value = state.vmName;
+    refs.imageSourceLocal.checked = state.imageSource === "local";
+    refs.imageSourceDownload.checked = state.imageSource === "download";
+    refs.baseImagePath.value = state.baseImagePath;
+    refs.imageDownloadUrl.value = state.imageDownloadUrl;
+    refs.imageCacheName.value = state.imageCacheName;
+    refs.guestIpCidr.value = state.guestIpCidr;
+    refs.guestGateway.value = state.guestGateway;
+    refs.guestDnsServers.value = state.guestDnsServers;
+    refs.guestNodeVcpus.value = String(state.guestNodeVcpus);
+    refs.guestNodeMemoryMb.value = String(state.guestNodeMemoryMb);
+    refs.guestDiskSizeGb.value = String(state.guestDiskSizeGb);
+    refs.performanceDomain.value = state.performanceDomain;
+    refs.packageAccessPreconfigured.checked = state.packageAccessMode === "preconfigured";
+    refs.packageAccessActivationKey.checked = state.packageAccessMode === "activation-key";
+    refs.packageAccessActivationFields.hidden = state.packageAccessMode !== "activation-key";
+    refs.rhsmOrganizationId.value = state.rhsmOrganizationId;
+    refs.rhsmActivationKey.value = state.rhsmActivationKey;
+    refs.rhsmReleaseLock.value = state.rhsmReleaseLock;
+    refs.rhsmExtraRepositories.value = state.rhsmExtraRepositories;
     refs.pullSecretValue.value = state.pullSecretValue;
     refs.pullSecretFile.value = state.pullSecretFile;
     refs.manageFirewall.checked = state.manageFirewall;
@@ -681,6 +958,13 @@ function render() {
     refs.serviceNodePortRange.value = state.serviceNodePortRange;
     refs.logLevel.value = state.logLevel;
     refs.wizardSummary.textContent = state.deploymentName.trim() || "New MicroShift deployment";
+    refs.targetPatternExistingHost.checked = state.targetPattern === "existing-host";
+    refs.targetPatternCreateHost.checked = state.targetPattern === "create-host";
+    refs.existingHostFields.hidden = state.targetPattern !== "existing-host";
+    refs.createHostFields.hidden = state.targetPattern !== "create-host";
+    refs.localImageFields.hidden = state.imageSource !== "local";
+    refs.downloadImageFields.hidden = state.imageSource !== "download";
+    renderProvisioningOptions();
 
     renderStepList();
     renderPanels();
@@ -713,6 +997,8 @@ function setJobFromStatus(status) {
         state.job = null;
         return;
     }
+    clearStartResponseTimer();
+    clearTransientStatus();
     state.job = {
         running: status.running,
         state: status.state || {},
@@ -765,6 +1051,9 @@ function loadArtifacts(mode, silent) {
         : ["--payload-b64", encodePayload(payload())];
 
     return backendCommand("artifacts", args).then(function (result) {
+        if (!result.ok) {
+            throw new Error((result.errors || ["Artifact generation failed"]).join(", "));
+        }
         state.artifacts = result.artifacts || [];
         if (!state.currentArtifactName || !state.artifacts.some(function (artifact) { return artifact.name === state.currentArtifactName; })) {
             state.currentArtifactName = state.artifacts.length ? state.artifacts[0].name : "";
@@ -857,22 +1146,46 @@ function goBack() {
 }
 
 function startDeployment() {
+    clearStartResponseTimer();
+    appendClientLog("Install MicroShift clicked.");
+    setTransientStatus("Validating the final deployment request.", "Checking the request before any VM or host action begins.");
     if (state.currentStep !== 4 || overallErrors().length > 0) {
-        render();
+        if (state.currentStep === 4) {
+            refreshPreflight();
+        }
+        appendClientLog("Install request blocked by validation or preflight errors.");
+        setTransientStatus("Install MicroShift is blocked. Resolve the validation issues shown on this page.", "");
+        revealBlockingState();
         return;
     }
     clearBackendErrors();
+    appendClientLog("Submitting the deployment request to the privileged backend.");
+    setTransientStatus("Submitting the deployment request.", "Waiting for the backend to accept the request and create runtime state.");
+    startResponseTimer = window.setTimeout(function () {
+        appendClientLog("Still waiting for the backend to accept the deployment request.");
+        setTransientStatus("Still waiting for the backend response.", "No VM has been created yet.");
+        render();
+    }, 3000);
     render();
     backendCommand("start", ["--payload-b64", encodePayload(payload())]).then(function (result) {
+        clearStartResponseTimer();
         if (!result.ok) {
             state.backendErrors = result.errors || ["MicroShift deployment start failed"];
+            appendClientLog("Backend rejected the deployment request: " + state.backendErrors.join(", "));
+            setTransientStatus("MicroShift deployment did not start.", "The backend rejected the request before any VM or install action began.");
             render();
             return;
         }
         state.currentStep = 4;
-        refreshStatus();
+        appendClientLog("Backend accepted the deployment request" + (result.unitName ? " as unit " + result.unitName : "") + ".");
+        setTransientStatus("The backend accepted the deployment request.", "Waiting for runtime state, VM creation activity, and backend execution logs.");
+        render();
+        waitForRuntimeState(10);
     }).catch(function (error) {
+        clearStartResponseTimer();
         state.backendErrors = [String(error)];
+        appendClientLog("Failed to submit the deployment request: " + String(error));
+        setTransientStatus("MicroShift deployment failed to start.", "The frontend could not complete the backend start request.");
         render();
     });
 }
@@ -887,9 +1200,19 @@ function cancelDeployment() {
 }
 
 function resetState() {
+    var savedPools = state.availableStoragePools;
+    var savedBridges = state.availableBridges;
     stopPolling();
     window.clearTimeout(artifactPreviewTimer);
     state = createInitialState();
+    state.availableStoragePools = savedPools;
+    state.availableBridges = savedBridges;
+    if (!state.storagePool && savedPools.length) {
+        state.storagePool = savedPools[0].name;
+    }
+    if (!state.bridgeName && savedBridges.length) {
+        state.bridgeName = savedBridges[0];
+    }
     render();
 }
 
@@ -945,12 +1268,52 @@ function bindCheckbox(input, key) {
     });
 }
 
+function loadOptions() {
+    return backendCommand("options").then(function (result) {
+        state.availableStoragePools = result.storagePools || [];
+        state.availableBridges = result.bridges || [];
+        if (!state.storagePool && result.defaults && result.defaults.storagePool) {
+            state.storagePool = result.defaults.storagePool;
+        }
+        if (!state.bridgeName && result.defaults && result.defaults.bridgeName) {
+            state.bridgeName = result.defaults.bridgeName;
+        }
+        if (!state.sshUser && result.defaults && result.defaults.sshUser) {
+            state.sshUser = result.defaults.sshUser;
+        }
+        if (!state.pullSecretFile && result.defaults && result.defaults.pullSecretFile) {
+            state.pullSecretFile = result.defaults.pullSecretFile;
+        }
+        render();
+        return result;
+    }).catch(function (error) {
+        state.backendErrors = [String(error)];
+        render();
+        throw error;
+    });
+}
+
 function bindEvents() {
     bindText(refs.deploymentName, "deploymentName");
     bindText(refs.hostAddress, "hostAddress");
     bindText(refs.sshPort, "sshPort", function (value) { return parseInt(value, 10) || 0; });
     bindText(refs.sshUser, "sshUser");
     bindText(refs.sshPrivateKeyFile, "sshPrivateKeyFile");
+    bindText(refs.vmName, "vmName");
+    bindText(refs.imageDownloadUrl, "imageDownloadUrl");
+    bindText(refs.imageCacheName, "imageCacheName");
+    bindText(refs.baseImagePath, "baseImagePath");
+    bindText(refs.guestIpCidr, "guestIpCidr");
+    bindText(refs.guestGateway, "guestGateway");
+    bindText(refs.guestDnsServers, "guestDnsServers");
+    bindText(refs.guestNodeVcpus, "guestNodeVcpus", function (value) { return parseInt(value, 10) || 0; });
+    bindText(refs.guestNodeMemoryMb, "guestNodeMemoryMb", function (value) { return parseInt(value, 10) || 0; });
+    bindText(refs.guestDiskSizeGb, "guestDiskSizeGb", function (value) { return parseInt(value, 10) || 0; });
+    bindText(refs.performanceDomain, "performanceDomain");
+    bindText(refs.rhsmOrganizationId, "rhsmOrganizationId");
+    bindText(refs.rhsmActivationKey, "rhsmActivationKey");
+    bindText(refs.rhsmReleaseLock, "rhsmReleaseLock");
+    bindText(refs.rhsmExtraRepositories, "rhsmExtraRepositories");
     bindText(refs.pullSecretValue, "pullSecretValue");
     bindText(refs.pullSecretFile, "pullSecretFile");
     bindText(refs.baseDomain, "baseDomain");
@@ -987,9 +1350,100 @@ function bindEvents() {
     bindCheckbox(refs.exposeNodePorts, "exposeNodePorts");
     bindCheckbox(refs.exposeMdns, "exposeMdns");
 
+    refs.targetPatternExistingHost.addEventListener("change", function (event) {
+        if (!event.target.checked) {
+            return;
+        }
+        state.targetPattern = "existing-host";
+        clearBackendErrors();
+        render();
+        if (state.currentStep === 4) {
+            refreshPreflight();
+        }
+        scheduleArtifactPreviewRefresh(true);
+    });
+    refs.targetPatternCreateHost.addEventListener("change", function (event) {
+        if (!event.target.checked) {
+            return;
+        }
+        state.targetPattern = "create-host";
+        state.sshPort = 22;
+        clearBackendErrors();
+        render();
+        if (state.currentStep === 4) {
+            refreshPreflight();
+        }
+        scheduleArtifactPreviewRefresh(true);
+    });
+    refs.imageSourceLocal.addEventListener("change", function (event) {
+        if (!event.target.checked) {
+            return;
+        }
+        state.imageSource = "local";
+        clearBackendErrors();
+        render();
+        if (state.currentStep === 4) {
+            refreshPreflight();
+        }
+        scheduleArtifactPreviewRefresh(true);
+    });
+    refs.imageSourceDownload.addEventListener("change", function (event) {
+        if (!event.target.checked) {
+            return;
+        }
+        state.imageSource = "download";
+        clearBackendErrors();
+        render();
+        if (state.currentStep === 4) {
+            refreshPreflight();
+        }
+        scheduleArtifactPreviewRefresh(true);
+    });
+    refs.storagePool.addEventListener("change", function (event) {
+        state.storagePool = event.target.value;
+        clearBackendErrors();
+        render();
+        if (state.currentStep === 4) {
+            refreshPreflight();
+        }
+        scheduleArtifactPreviewRefresh(true);
+    });
+    refs.bridgeName.addEventListener("change", function (event) {
+        state.bridgeName = event.target.value;
+        clearBackendErrors();
+        render();
+        if (state.currentStep === 4) {
+            refreshPreflight();
+        }
+        scheduleArtifactPreviewRefresh(true);
+    });
+    refs.packageAccessPreconfigured.addEventListener("change", function (event) {
+        if (!event.target.checked) {
+            return;
+        }
+        state.packageAccessMode = "preconfigured";
+        clearBackendErrors();
+        render();
+        if (state.currentStep === 4) {
+            refreshPreflight();
+        }
+        scheduleArtifactPreviewRefresh(true);
+    });
+    refs.packageAccessActivationKey.addEventListener("change", function (event) {
+        if (!event.target.checked) {
+            return;
+        }
+        state.packageAccessMode = "activation-key";
+        clearBackendErrors();
+        render();
+        if (state.currentStep === 4) {
+            refreshPreflight();
+        }
+        scheduleArtifactPreviewRefresh(true);
+    });
+
     refs.backButton.addEventListener("click", goBack);
     refs.nextButton.addEventListener("click", goNext);
-    refs.deployButton.addEventListener("click", startDeployment);
     refs.stopButton.addEventListener("click", cancelDeployment);
     refs.cancelButton.addEventListener("click", function () {
         if (state.job && state.job.running) {
@@ -1007,6 +1461,19 @@ function bindEvents() {
     refs.yamlDivider.addEventListener("pointerdown", startYamlResize);
     refs.artifactCopyButton.addEventListener("click", copyCurrentArtifact);
     refs.artifactDownloadButton.addEventListener("click", downloadCurrentArtifact);
+    document.addEventListener("click", function (event) {
+        var deployTarget = event.target.closest("#deploy-button");
+        if (!deployTarget) {
+            return;
+        }
+        event.preventDefault();
+        if (deployTarget.disabled || deployTarget.hidden) {
+            setTransientStatus("Install MicroShift is currently unavailable.", "");
+            render();
+            return;
+        }
+        startDeployment();
+    }, true);
 }
 
 function cacheRefs() {
@@ -1023,6 +1490,10 @@ function cacheRefs() {
     refs.step2 = document.getElementById("step-2");
     refs.step3 = document.getElementById("step-3");
     refs.step4 = document.getElementById("step-4");
+    refs.targetPatternExistingHost = document.getElementById("target-pattern-existing-host");
+    refs.targetPatternCreateHost = document.getElementById("target-pattern-create-host");
+    refs.existingHostFields = document.getElementById("existing-host-fields");
+    refs.createHostFields = document.getElementById("create-host-fields");
 
     refs.deploymentNameField = document.getElementById("deployment-name-field");
     refs.deploymentName = document.getElementById("deployment-name");
@@ -1036,6 +1507,48 @@ function cacheRefs() {
     refs.sshUser = document.getElementById("ssh-user");
     refs.sshPrivateKeyFileField = document.getElementById("ssh-private-key-file-field");
     refs.sshPrivateKeyFile = document.getElementById("ssh-private-key-file");
+    refs.vmNameField = document.getElementById("vm-name-field");
+    refs.vmName = document.getElementById("vm-name");
+    refs.imageSourceLocal = document.getElementById("image-source-local");
+    refs.imageSourceDownload = document.getElementById("image-source-download");
+    refs.localImageFields = document.getElementById("local-image-fields");
+    refs.downloadImageFields = document.getElementById("download-image-fields");
+    refs.baseImagePathField = document.getElementById("base-image-path-field");
+    refs.baseImagePath = document.getElementById("base-image-path");
+    refs.imageDownloadUrlField = document.getElementById("image-download-url-field");
+    refs.imageDownloadUrl = document.getElementById("image-download-url");
+    refs.imageCacheNameField = document.getElementById("image-cache-name-field");
+    refs.imageCacheName = document.getElementById("image-cache-name");
+    refs.storagePoolField = document.getElementById("storage-pool-field");
+    refs.storagePool = document.getElementById("storage-pool");
+    refs.bridgeNameField = document.getElementById("bridge-name-field");
+    refs.bridgeName = document.getElementById("bridge-name");
+    refs.guestIpCidrField = document.getElementById("guest-ip-cidr-field");
+    refs.guestIpCidr = document.getElementById("guest-ip-cidr");
+    refs.guestGatewayField = document.getElementById("guest-gateway-field");
+    refs.guestGateway = document.getElementById("guest-gateway");
+    refs.guestDnsServersField = document.getElementById("guest-dns-servers-field");
+    refs.guestDnsServers = document.getElementById("guest-dns-servers");
+    refs.guestNodeVcpusField = document.getElementById("guest-node-vcpus-field");
+    refs.guestNodeVcpus = document.getElementById("guest-node-vcpus");
+    refs.guestNodeMemoryMbField = document.getElementById("guest-node-memory-mb-field");
+    refs.guestNodeMemoryMb = document.getElementById("guest-node-memory-mb");
+    refs.guestDiskSizeGbField = document.getElementById("guest-disk-size-gb-field");
+    refs.guestDiskSizeGb = document.getElementById("guest-disk-size-gb");
+    refs.performanceDomainField = document.getElementById("performance-domain-field");
+    refs.performanceDomain = document.getElementById("performance-domain");
+    refs.packageAccessModeField = document.getElementById("package-access-mode-field");
+    refs.packageAccessPreconfigured = document.getElementById("package-access-preconfigured");
+    refs.packageAccessActivationKey = document.getElementById("package-access-activation-key");
+    refs.packageAccessActivationFields = document.getElementById("package-access-activation-fields");
+    refs.rhsmOrganizationIdField = document.getElementById("rhsm-organization-id-field");
+    refs.rhsmOrganizationId = document.getElementById("rhsm-organization-id");
+    refs.rhsmActivationKeyField = document.getElementById("rhsm-activation-key-field");
+    refs.rhsmActivationKey = document.getElementById("rhsm-activation-key");
+    refs.rhsmReleaseLockField = document.getElementById("rhsm-release-lock-field");
+    refs.rhsmReleaseLock = document.getElementById("rhsm-release-lock");
+    refs.rhsmExtraRepositoriesField = document.getElementById("rhsm-extra-repositories-field");
+    refs.rhsmExtraRepositories = document.getElementById("rhsm-extra-repositories");
     refs.pullSecretValueField = document.getElementById("pull-secret-value-field");
     refs.pullSecretValue = document.getElementById("pull-secret-value");
     refs.pullSecretFileField = document.getElementById("pull-secret-file-field");
@@ -1093,6 +1606,8 @@ function cacheRefs() {
 document.addEventListener("DOMContentLoaded", function () {
     cacheRefs();
     bindEvents();
+    window.cockpitMicroshiftStart = startDeployment;
     render();
+    loadOptions();
     refreshStatus();
 });

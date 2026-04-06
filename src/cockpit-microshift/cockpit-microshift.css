@@ -690,6 +690,21 @@ pre {
     margin-bottom: 16px;
 }
 
+.execution-status__summary {
+    margin: 0;
+    color: #151515;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+.execution-status__detail {
+    margin-top: 6px;
+    color: #4f5255;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
 .review-list {
     display: grid;
     grid-template-columns: max-content minmax(0, 1fr);
@@ -1759,6 +1774,9 @@ body.is-resizing-yaml * {
     margin-top: 20px;
     padding-top: 16px;
     border-top: 1px solid #ededed;
+    position: relative;
+    z-index: 20;
+    pointer-events: auto;
 }
 
 .wizard-footer__primary,
@@ -1767,6 +1785,16 @@ body.is-resizing-yaml * {
     flex-wrap: wrap;
     gap: 12px;
     align-items: center;
+}
+
+#deploy-button,
+#next-button,
+#back-button,
+#cancel-button,
+#stop-button {
+    position: relative;
+    z-index: 21;
+    pointer-events: auto;
 }
 
 @media (max-width: 1180px) {

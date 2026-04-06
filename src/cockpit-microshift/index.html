@@ -4,7 +4,7 @@
     <title>Install MicroShift</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="stylesheet" href="cockpit-microshift.css" />
+    <link rel="stylesheet" href="cockpit-microshift.css?v=20260406e" />
     <script src="../base1/cockpit.js"></script>
 </head>
 <body class="pf-v6-m-tabular-nums" data-page="microshift">
@@ -19,7 +19,7 @@
                 <div class="console-eyebrow">Single-node edge deployment</div>
                 <h1 class="console-title">Install MicroShift</h1>
                 <p class="console-subtitle">
-                    Guided RPM-based MicroShift deployment for an existing RHEL host, aligned to the Red Hat Build of MicroShift installation model.
+                    Guided MicroShift deployment either onto an existing RHEL host or into a locally provisioned libvirt guest, with the in-guest install aligned to the Red Hat Build of MicroShift installation model.
                 </p>
             </div>
             <div class="page-header__actions">
@@ -34,7 +34,7 @@
                 <div class="wizard-shell__copy">
                     <h2 class="wizard-shell__title">MicroShift host deployment</h2>
                     <p class="wizard-shell__subtitle">
-                        Prepare an existing RHEL host, push the MicroShift configuration, install the RPMs, and validate the single-node deployment.
+                        Choose an existing host or create a local libvirt guest, then apply the supported MicroShift RPM-based install flow and validate the single-node deployment.
                     </p>
                 </div>
                 <div class="wizard-shell__actions">
@@ -67,7 +67,28 @@
                             <section id="step-1" class="step-panel">
                                 <div class="form-grid">
                                     <div class="info-card">
-                                        <h4 class="section-title section-title--small">Target host access</h4>
+                                        <div class="form-field" id="deployment-target-pattern-field">
+                                            <label class="field-label">Deployment target pattern</label>
+                                            <div class="choice-group">
+                                                <label class="choice-option">
+                                                    <input id="target-pattern-existing-host" name="deployment-target-pattern" type="radio" checked />
+                                                    <span>
+                                                        <span class="choice-option__title">Use an existing RHEL host</span>
+                                                        <span class="choice-option__helper">Supported now. Install MicroShift onto a reachable RHEL 9 or RHEL 10 machine over SSH.</span>
+                                                    </span>
+                                                </label>
+                                                <label class="choice-option">
+                                                    <input id="target-pattern-create-host" name="deployment-target-pattern" type="radio" />
+                                                    <span>
+                                                        <span class="choice-option__title">Create and provision a new host</span>
+                                                        <span class="choice-option__helper">Provision a new RHEL guest on the Cockpit host with libvirt/KVM, then install MicroShift inside it.</span>
+                                                    </span>
+                                                </label>
+                                            </div>
+                                            <div class="field-helper">The create-host path is a local libvirt convenience workflow. The actual MicroShift install still follows the Red Hat documented host-based model once the guest exists.</div>
+                                        </div>
+
+                                        <h4 class="section-title section-title--small">Deployment access</h4>
                                         <div class="form-field" id="deployment-name-field">
                                             <label class="field-label" for="deployment-name">Deployment name <span class="required-marker">*</span></label>
                                             <input id="deployment-name" class="text-input" type="text" autocomplete="off" />
@@ -79,22 +100,130 @@
                                                 <option>4.20</option>
                                             </select>
                                         </div>
-                                        <div class="form-field" id="host-address-field">
-                                            <label class="field-label" for="host-address">Target host address <span class="required-marker">*</span></label>
-                                            <input id="host-address" class="text-input" type="text" autocomplete="off" />
-                                        </div>
-                                        <div class="form-field" id="ssh-port-field">
-                                            <label class="field-label" for="ssh-port">SSH port <span class="required-marker">*</span></label>
-                                            <input id="ssh-port" class="text-input" type="number" min="1" max="65535" />
-                                        </div>
                                         <div class="form-field" id="ssh-user-field">
                                             <label class="field-label" for="ssh-user">SSH user <span class="required-marker">*</span></label>
                                             <input id="ssh-user" class="text-input" type="text" autocomplete="off" />
+                                            <div class="field-helper">For an existing host, this must already exist on the target machine. For a new VM, this account will be created through cloud-init and granted passwordless sudo.</div>
                                         </div>
                                         <div class="form-field" id="ssh-private-key-file-field">
                                             <label class="field-label" for="ssh-private-key-file">SSH private key file <span class="required-marker">*</span></label>
                                             <input id="ssh-private-key-file" class="text-input" type="text" autocomplete="off" />
-                                            <div class="field-helper">The Cockpit host must be able to SSH to the target host and run <code>sudo -n</code> without prompting.</div>
+                                            <div class="field-helper">The Cockpit host uses this key to SSH into the final MicroShift host. For a new VM, the matching public key will be injected during provisioning.</div>
+                                        </div>
+
+                                        <div id="existing-host-fields">
+                                            <h4 class="section-title section-title--small">Existing host access</h4>
+                                            <div class="form-field" id="host-address-field">
+                                                <label class="field-label" for="host-address">RHEL target host address <span class="required-marker">*</span></label>
+                                                <input id="host-address" class="text-input" type="text" autocomplete="off" />
+                                                <div class="field-helper">Enter the IP address or DNS name of the existing RHEL 9 or RHEL 10 machine where MicroShift will be installed. This is the host you SSH into, not a future cluster or API hostname.</div>
+                                            </div>
+                                            <div class="form-field" id="ssh-port-field">
+                                                <label class="field-label" for="ssh-port">SSH port <span class="required-marker">*</span></label>
+                                                <input id="ssh-port" class="text-input" type="number" min="1" max="65535" />
+                                            </div>
+                                        </div>
+
+                                        <div id="create-host-fields" hidden>
+                                            <h4 class="section-title section-title--small">Local VM provisioning</h4>
+                                            <div class="form-field" id="vm-name-field">
+                                                <label class="field-label" for="vm-name">VM name <span class="required-marker">*</span></label>
+                                                <input id="vm-name" class="text-input" type="text" autocomplete="off" />
+                                            </div>
+                                            <div class="form-field">
+                                                <label class="field-label">RHEL cloud image source</label>
+                                                <div class="choice-group">
+                                                    <label class="choice-option">
+                                                        <input id="image-source-local" name="image-source" type="radio" checked />
+                                                        <span>
+                                                            <span class="choice-option__title">Use a local qcow2 image</span>
+                                                            <span class="choice-option__helper">Point to a RHEL cloud image already present on the Cockpit host.</span>
+                                                        </span>
+                                                    </label>
+                                                    <label class="choice-option">
+                                                        <input id="image-source-download" name="image-source" type="radio" />
+                                                        <span>
+                                                            <span class="choice-option__title">Download image to the Cockpit host</span>
+                                                            <span class="choice-option__helper">Fetch the qcow2 image into the plugin cache before provisioning the VM.</span>
+                                                        </span>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            <div id="local-image-fields">
+                                                <div class="form-field" id="base-image-path-field">
+                                                    <label class="field-label" for="base-image-path">RHEL cloud image path <span class="required-marker">*</span></label>
+                                                    <input id="base-image-path" class="text-input" type="text" autocomplete="off" />
+                                                    <div class="field-helper">Enter the local path on the Cockpit host to a RHEL qcow2 cloud image that can be imported with <code>virt-install --import</code>.</div>
+                                                </div>
+                                            </div>
+                                            <div id="download-image-fields" hidden>
+                                                <div class="form-field" id="image-download-url-field">
+                                                    <label class="field-label" for="image-download-url">Image download URL <span class="required-marker">*</span></label>
+                                                    <input id="image-download-url" class="text-input" type="text" autocomplete="off" />
+                                                    <div class="field-helper">Provide a direct URL the Cockpit host can fetch with <code>curl</code>. This can be a signed or authenticated Red Hat image URL, or an internal mirror URL.</div>
+                                                </div>
+                                                <div class="form-field" id="image-cache-name-field">
+                                                    <label class="field-label" for="image-cache-name">Cached filename override</label>
+                                                    <input id="image-cache-name" class="text-input" type="text" autocomplete="off" />
+                                                    <div class="field-helper">Optional. If left empty, the cached qcow2 filename is derived from the download URL.</div>
+                                                </div>
+                                            </div>
+                                            <div class="ai-inline-alert" role="status">
+                                                For Red Hat Build of MicroShift 4.21, use a <strong>RHEL 9.6</strong> cloud image for the supported install path. <strong>RHEL 10.0</strong> is Technology Preview only, and newer RHEL 10 minors can fail because the required RPMs are not exposed through the enabled MicroShift repositories.
+                                                <a class="wizard-doc-link" href="https://docs.redhat.com/en/documentation/red_hat_build_of_microshift/4.21/html/getting_ready_to_install_microshift/microshift-install-get-ready#microshift-rhde-compatibility-table_microshift-install-get-ready" target="_blank" rel="noopener noreferrer">
+                                                    Compatibility table
+                                                </a>
+                                            </div>
+                                            <div class="form-field" id="storage-pool-field">
+                                                <label class="field-label" for="storage-pool">Libvirt storage pool <span class="required-marker">*</span></label>
+                                                <select id="storage-pool" class="select-input"></select>
+                                            </div>
+                                            <div class="form-field" id="bridge-name-field">
+                                                <label class="field-label" for="bridge-name">Bridge <span class="required-marker">*</span></label>
+                                                <select id="bridge-name" class="select-input"></select>
+                                                <div class="field-helper">Select the host bridge the new VM should attach to, for example the same bridge your other local VMs use for LAN access.</div>
+                                            </div>
+                                            <div class="form-field" id="guest-ip-cidr-field">
+                                                <label class="field-label" for="guest-ip-cidr">New VM IP address and prefix <span class="required-marker">*</span></label>
+                                                <input id="guest-ip-cidr" class="text-input" type="text" autocomplete="off" />
+                                                <div class="field-helper">Enter the static IPv4 or IPv6 address you want the new MicroShift VM to use on your network, including the prefix length. Example: <code>192.168.1.250/24</code>.</div>
+                                            </div>
+                                            <div class="form-field" id="guest-gateway-field">
+                                                <label class="field-label" for="guest-gateway">Default gateway for the new VM <span class="required-marker">*</span></label>
+                                                <input id="guest-gateway" class="text-input" type="text" autocomplete="off" />
+                                                <div class="field-helper">Enter the router address the new VM should use to reach systems outside its local subnet. Example: <code>192.168.1.1</code>.</div>
+                                            </div>
+                                            <div class="form-field" id="guest-dns-servers-field">
+                                                <label class="field-label" for="guest-dns-servers">DNS servers for the new VM</label>
+                                                <input id="guest-dns-servers" class="text-input" type="text" autocomplete="off" />
+                                                <div class="field-helper">Enter the DNS servers the new VM should use for name resolution, separated by commas. Example: <code>192.168.1.142, 192.168.1.242</code>.</div>
+                                            </div>
+                                            <div class="form-field" id="guest-node-vcpus-field">
+                                                <label class="field-label" for="guest-node-vcpus">Guest vCPU count <span class="required-marker">*</span></label>
+                                                <input id="guest-node-vcpus" class="text-input" type="number" min="1" />
+                                            </div>
+                                            <div class="form-field" id="guest-node-memory-mb-field">
+                                                <label class="field-label" for="guest-node-memory-mb">Guest memory (MiB) <span class="required-marker">*</span></label>
+                                                <input id="guest-node-memory-mb" class="text-input" type="number" min="1024" />
+                                            </div>
+                                            <div class="form-field" id="guest-disk-size-gb-field">
+                                                <label class="field-label" for="guest-disk-size-gb">Guest disk size (GiB) <span class="required-marker">*</span></label>
+                                                <input id="guest-disk-size-gb" class="text-input" type="number" min="10" />
+                                            </div>
+                                            <div class="form-field" id="performance-domain-field">
+                                                <label class="field-label" for="performance-domain">Performance domain</label>
+                                                <select id="performance-domain" class="select-input">
+                                                    <option value="none" selected>None</option>
+                                                    <option value="gold">Gold</option>
+                                                    <option value="silver">Silver</option>
+                                                    <option value="bronze">Bronze</option>
+                                                </select>
+                                                <div class="field-helper">Applies the same Stakkr-style weighted CPU share tiers used by the OpenShift plugin when provisioning the local MicroShift VM.</div>
+                                            </div>
+                                            <div class="read-only-note">
+                                                <div class="read-only-note__title">Local provisioning divergence</div>
+                                                <div class="body-copy">Creating a host locally with libvirt/KVM is a Cockpit convenience layer. The actual MicroShift install inside that guest still follows the documented Red Hat host-based RPM workflow. Downloaded images are cached on the Cockpit host under the plugin runtime directory.</div>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -108,9 +237,49 @@
                                             <label class="field-label" for="pull-secret-file">Pull secret file</label>
                                             <input id="pull-secret-file" class="text-input" type="text" autocomplete="off" />
                                         </div>
+                                        <h4 class="section-title section-title--small">Package access</h4>
+                                        <div class="form-field" id="package-access-mode-field">
+                                            <label class="field-label">Repository access model</label>
+                                            <div class="choice-group">
+                                                <label class="choice-option">
+                                                    <input id="package-access-preconfigured" name="package-access-mode" type="radio" checked />
+                                                    <span>
+                                                        <span class="choice-option__title">Use preconfigured repositories</span>
+                                                        <span class="choice-option__helper">The target RHEL host is already registered and already exposes the <code>microshift</code> and <code>openshift-clients</code> RPMs.</span>
+                                                    </span>
+                                                </label>
+                                                <label class="choice-option">
+                                                    <input id="package-access-activation-key" name="package-access-mode" type="radio" />
+                                                    <span>
+                                                        <span class="choice-option__title">Register and enable repositories automatically</span>
+                                                        <span class="choice-option__helper">Use <code>subscription-manager</code> with an organization ID and activation key, then enable the documented MicroShift repositories before installation.</span>
+                                                    </span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div id="package-access-activation-fields" hidden>
+                                            <div class="form-field" id="rhsm-organization-id-field">
+                                                <label class="field-label" for="rhsm-organization-id">RHSM organization ID <span class="required-marker">*</span></label>
+                                                <input id="rhsm-organization-id" class="text-input" type="text" autocomplete="off" />
+                                            </div>
+                                            <div class="form-field" id="rhsm-activation-key-field">
+                                                <label class="field-label" for="rhsm-activation-key">RHSM activation key <span class="required-marker">*</span></label>
+                                                <input id="rhsm-activation-key" class="text-input" type="text" autocomplete="off" />
+                                            </div>
+                                            <div class="form-field" id="rhsm-release-lock-field">
+                                                <label class="field-label" for="rhsm-release-lock">RHEL release lock</label>
+                                                <input id="rhsm-release-lock" class="text-input" type="text" autocomplete="off" />
+                                                <div class="field-helper">Optional. The Red Hat Build of MicroShift 4.21 RPM guide uses <code>subscription-manager release --set=9.6</code> on RHEL 9.</div>
+                                            </div>
+                                            <div class="form-field" id="rhsm-extra-repositories-field">
+                                                <label class="field-label" for="rhsm-extra-repositories">Additional repository IDs</label>
+                                                <textarea id="rhsm-extra-repositories" class="text-input text-input--multiline" spellcheck="false"></textarea>
+                                                <div class="field-helper">Optional. Add any extra <code>subscription-manager repos --enable ...</code> IDs required by your local entitlement model, one per line or comma-separated.</div>
+                                            </div>
+                                        </div>
                                         <div class="read-only-note">
-                                            <div class="read-only-note__title">Supported installation model</div>
-                                            <div class="body-copy">This flow assumes the target host already has access to the Red Hat package repositories required for <code>microshift</code> and <code>openshift-clients</code>.</div>
+                                            <div class="read-only-note__title">Authoritative install model</div>
+                                            <div class="body-copy">The final install still follows the Red Hat Build of MicroShift RPM workflow. Automated registration is a convenience layer for preparing the target host before <code>dnf install microshift openshift-clients</code>.</div>
                                         </div>
                                     </div>
                                 </div>
@@ -118,7 +287,7 @@
 
                             <section id="step-2" class="step-panel" hidden>
                                 <div class="ai-inline-alert" role="status">
-                                    The Red Hat installation model expects an existing RHEL host with package access, passwordless sudo, and optional firewall hardening. The preflight step checks those conditions over SSH before installation starts.
+                                    The preflight step validates the selected operating model. Existing-host deployments are checked over SSH. Create-host deployments validate local libvirt prerequisites first, then apply the same in-guest MicroShift checks after the VM is provisioned.
                                 </div>
                                 <div class="form-grid">
                                     <div class="info-card">
@@ -163,10 +332,10 @@
                                     <div class="info-card">
                                         <h4 class="section-title section-title--small">Preflight expectations</h4>
                                         <ul class="inline-list">
-                                            <li>The target host must be RHEL 9 or RHEL 10.</li>
-                                            <li>The target host must have the <code>microshift</code> and <code>openshift-clients</code> RPMs available through configured repositories.</li>
-                                            <li>The SSH user must have non-interactive sudo.</li>
-                                            <li>The plugin will write <code>/etc/crio/openshift-pull-secret</code> and <code>/etc/microshift/config.yaml</code> on the target host.</li>
+                                            <li>Existing-host deployments require a reachable RHEL 9 or RHEL 10 machine with non-interactive sudo.</li>
+                                            <li>Create-host deployments require local libvirt/KVM, a dir-backed storage pool, a bridge, and either a usable local RHEL cloud image or a direct downloadable qcow2 URL.</li>
+                                            <li>The final MicroShift host must either already expose the required RPM repositories or be registered through the automated package-access mode before installation starts.</li>
+                                            <li>The plugin will write <code>/etc/crio/openshift-pull-secret</code> and <code>/etc/microshift/config.yaml</code> on the final MicroShift host.</li>
                                         </ul>
                                     </div>
                                 </div>
@@ -244,8 +413,8 @@
                                         <div id="preflight-alert-body" class="validation-alert__body"></div>
                                     </div>
                                     <div class="info-card__body">
-                                        <div id="job-status-summary" class="body-copy">No deployment has been started yet.</div>
-                                        <div id="job-current-task" class="field-helper"></div>
+                                        <div id="job-status-summary" class="execution-status__summary">No deployment has been started yet.</div>
+                                        <div id="job-current-task" class="execution-status__detail"></div>
                                     </div>
                                     <div id="install-access-card" class="info-card__body" hidden>
                                         <h5 class="section-title section-title--small">Access details</h5>
@@ -306,6 +475,6 @@
         </section>
     </div>
 
-    <script src="cockpit-microshift.js"></script>
+    <script src="cockpit-microshift.js?v=20260406e"></script>
 </body>
 </html>

@@ -1,7 +1,8 @@
 # cockpit-microshift
 
-Standalone Cockpit plugin for guided MicroShift installation onto an existing
-RHEL host over SSH.
+Standalone Cockpit plugin for guided MicroShift installation either onto an
+existing RHEL host over SSH or into a locally provisioned libvirt/KVM guest on
+the Cockpit host.
 
 [![License: GPL-3.0](https://img.shields.io/github/license/turbra/cockpit-microshift)](LICENSE)
 ![MicroShift 4.21](https://img.shields.io/badge/MicroShift-4.21-red)
@@ -10,7 +11,10 @@ RHEL host over SSH.
 
 - dedicated MicroShift installer UI
 - host-based RPM install workflow
+- optional local libvirt/KVM guest provisioning before the in-guest install
+- optional local libvirt/KVM guest provisioning with selectable performance domains
 - preflight checks for RHEL version, SSH, sudo, architecture, and package availability
+- optional automated RHSM registration and MicroShift repository enablement
 - rendered `config.yaml`, request JSON, and remote install plan review
 - execution status, recent output, and kubeconfig retrieval after install
 
@@ -23,8 +27,10 @@ RHEL host over SSH.
 - Community mirror reviewed for context:
   https://github.com/microshift-io/microshift
 
-This plugin follows the Red Hat host-based RPM installation model. It does not
-try to treat MicroShift as a full OpenShift cluster deployment.
+This plugin follows the Red Hat host-based RPM installation model for the final
+MicroShift install. The local libvirt/KVM path is an intentional convenience
+layer that provisions a RHEL guest first, then applies the same documented
+in-guest install flow.
 
 ## Prerequisites
 
@@ -32,10 +38,33 @@ try to treat MicroShift as a full OpenShift cluster deployment.
 - the Cockpit host can SSH to the target host with key auth
 - the SSH user has `sudo -n` on the target host
 - the target host is RHEL 9 or RHEL 10
-- the target host already has access to repositories that provide:
-  - `microshift`
-  - `openshift-clients`
 - the operator supplies a valid pull secret
+
+Repository access can follow either pattern:
+
+- `Use preconfigured repositories`
+  - the target host is already registered and already exposes:
+    - `microshift`
+    - `openshift-clients`
+- `Register and enable repositories automatically`
+  - the operator supplies:
+    - RHSM organization ID
+    - RHSM activation key
+  - optional:
+    - release lock
+    - additional repository IDs
+
+Additional prerequisites for the create-host path:
+
+- libvirt/KVM is available on the Cockpit host
+- either:
+  - a supported libvirt storage pool exists
+  - or the host can use the standard `/var/lib/libvirt/images` path
+- a bridge interface exists on the Cockpit host
+- either:
+  - a usable RHEL qcow2 cloud image is available locally on the Cockpit host
+  - or a direct downloadable qcow2 URL is available to the Cockpit host
+- you can assign a static guest IP, gateway, and DNS servers for the new VM
 
 ## Installation
 
@@ -76,9 +105,12 @@ sudo dnf install -y ./rpmbuild/RPMS/noarch/cockpit-microshift-*.noarch.rpm
 ## Runtime Model
 
 - plugin runtime under `/var/lib/cockpit-microshift/`
+- downloaded guest images cached under `/var/lib/cockpit-microshift/image-cache/`
 - rendered config and install plan stored under the runtime work directory
 - generated kubeconfig copied back to the Cockpit host after a successful install
 - optional firewalld configuration uses the documented MicroShift trusted-source and exposed-port model
+- create-host deployments also render cloud-init inputs and a local `virt-install` plan
+- create-host root disks support the same `dir` and `logical` pool types used by `cockpit-openshift`
 
 ## Project Layout
 
