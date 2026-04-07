@@ -46,6 +46,9 @@ function formatDate(value) {
 function clusterStatus(cluster, status) {
     var activeClusterId = status && status.request ? clusterIdFromRequest(status.request) : "";
 
+    if (status && status.running && status.state && status.state.mode === "destroy" && status.state.clusterId === cluster.clusterId) {
+        return "Destroying";
+    }
     if (status && status.running && cluster.clusterId === activeClusterId) {
         return "Deploying";
     }
@@ -123,6 +126,7 @@ function renderOverview() {
         refs.mainPanels.forEach(function (panel) {
             panel.hidden = true;
         });
+        refs.destroyButton.disabled = true;
         refs.openApi.classList.add("action-button--disabled");
         refs.openApi.removeAttribute("href");
         return;
@@ -130,6 +134,7 @@ function renderOverview() {
 
     refs.missing.hidden = true;
     statusText = clusterStatus(cluster, state.status);
+    refs.destroyButton.disabled = cluster.deploymentTargetPattern !== "create-host" || !!(state.status && state.status.running);
     refs.title.textContent = cluster.clusterId;
     refs.subtitle.textContent = statusText + " on " + (cluster.provider || "MicroShift");
     refs.breadcrumbName.textContent = cluster.clusterId;
@@ -255,6 +260,7 @@ function cacheRefs() {
     refs.breadcrumbName = document.getElementById("cluster-breadcrumb-name");
     refs.openApi = document.getElementById("open-api-link");
     refs.refreshButton = document.getElementById("overview-refresh-button");
+    refs.destroyButton = document.getElementById("destroy-cluster-button");
     refs.details = document.getElementById("cluster-details-list");
     refs.advisor = document.getElementById("advisor-list");
     refs.notices = document.getElementById("notices-list");
@@ -281,6 +287,25 @@ function cacheRefs() {
 
 function bindEvents() {
     refs.refreshButton.addEventListener("click", refreshPage);
+    refs.destroyButton.addEventListener("click", function () {
+        var cluster = state.cluster;
+
+        if (!cluster || cluster.deploymentTargetPattern !== "create-host") {
+            return;
+        }
+        if (!window.confirm("Destroy cluster " + cluster.clusterId + "?")) {
+            return;
+        }
+        backendCommand("destroy", ["--cluster-id", cluster.clusterId]).then(function (result) {
+            if (!result.ok) {
+                window.alert((result.errors || ["Cluster destroy failed"]).join("\n"));
+                return;
+            }
+            window.location.href = "index.html";
+        }).catch(function (error) {
+            window.alert(String(error));
+        });
+    });
     refs.tabs.forEach(function (button) {
         button.addEventListener("click", function () {
             state.activeTab = button.dataset.tab;
