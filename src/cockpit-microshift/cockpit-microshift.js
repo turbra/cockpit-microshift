@@ -89,7 +89,8 @@ function createInitialState() {
         transientCurrentTask: "",
         clientLog: [],
         availableStoragePools: [],
-        availableBridges: []
+        availableBridges: [],
+        pendingRebuildPayload: null
     };
 }
 
@@ -234,7 +235,11 @@ function artifactPreviewKey() {
 }
 
 function artifactLoadMode() {
-    return state.job ? "current" : "payload";
+    return state.job && currentJobMode() !== "destroy" ? "current" : "payload";
+}
+
+function currentJobMode() {
+    return state.job && state.job.state ? (state.job.state.mode || "deploy") : "";
 }
 
 function clusterIdFromRequest(request) {
@@ -266,7 +271,10 @@ function statusRequestAppliesToPage(status) {
     var statusClusterId = status && status.request ? clusterIdFromRequest(status.request) : "";
 
     if (!requestedClusterId) {
-        return true;
+        return false;
+    }
+    if (status && status.state && status.state.mode === "destroy") {
+        return status.state.clusterId === requestedClusterId;
     }
     return requestedClusterId === statusClusterId;
 }
@@ -742,6 +750,7 @@ function createLinkValue(url) {
 
 function renderJob() {
     var stateData = state.job ? state.job.state || {} : {};
+    var mode = stateData.mode || "deploy";
     var status = stateData.status || "";
     var summary;
     var logLines;
@@ -755,9 +764,11 @@ function renderJob() {
         return;
     }
 
-    summary = "MicroShift deployment status: " + (status || "unknown");
+    summary = "MicroShift " + (mode === "destroy" ? "destroy" : "deployment") + " status: " + (status || "unknown");
     if (stateData.deploymentName) {
         summary += " for " + stateData.deploymentName;
+    } else if (mode === "destroy" && stateData.clusterId) {
+        summary += " for " + stateData.clusterId;
     }
 
     refs.jobStatusSummary.textContent = summary;
@@ -910,18 +921,22 @@ function renderProvisioningOptions() {
 function renderFooter() {
     var onFinalStep = state.currentStep === 4;
     var running = state.job && state.job.running;
+    var jobMode = currentJobMode();
     var status = state.job && state.job.state ? state.job.state.status : "";
     var stoppedOrComplete = status === "succeeded" || status === "failed" || status === "canceled";
     var canAdvance = currentStepErrors().length === 0;
+    var cleanRebuildAvailable = onFinalStep && state.targetPattern === "create-host" && !!queryClusterId() && jobMode !== "destroy";
 
     refs.backButton.hidden = state.currentStep === 1;
     refs.backButton.disabled = running;
     refs.nextButton.hidden = onFinalStep || !!running;
     refs.nextButton.disabled = !canAdvance || onFinalStep || !!running;
     refs.nextButton.style.display = onFinalStep || running ? "none" : "";
-    refs.deployButton.hidden = !onFinalStep || !!running || status === "succeeded";
-    refs.deployButton.disabled = !!running || status === "succeeded";
-    refs.deployButton.style.display = !onFinalStep || running || status === "succeeded" ? "none" : "";
+    refs.deployButton.hidden = !onFinalStep || !!running || (status === "succeeded" && jobMode !== "destroy");
+    refs.deployButton.disabled = !!running || (status === "succeeded" && jobMode !== "destroy");
+    refs.deployButton.style.display = !onFinalStep || running || (status === "succeeded" && jobMode !== "destroy") ? "none" : "";
+    refs.redeployButton.hidden = !cleanRebuildAvailable || !!running;
+    refs.redeployButton.disabled = !!running;
     refs.stopButton.hidden = !running;
     refs.stopButton.disabled = !running;
     refs.cancelButton.textContent = stoppedOrComplete ? "Done" : "Cancel";
@@ -1049,13 +1064,39 @@ function setJobFromStatus(status) {
     }
 }
 
+function maybeStartPendingRebuild() {
+    var rebuildPayload;
+
+    if (!state.pendingRebuildPayload || !state.job || !state.job.state || state.job.running || state.job.state.mode !== "destroy") {
+        return false;
+    }
+
+    rebuildPayload = state.pendingRebuildPayload;
+    state.pendingRebuildPayload = null;
+    if (state.job.state.status !== "succeeded") {
+        appendClientLog("Clean rebuild stopped because the destroy step did not complete successfully.");
+        render();
+        return false;
+    }
+
+    appendClientLog("Previous local deployment cleanup completed. Starting the replacement deployment.");
+    setTransientStatus("Previous local deployment cleanup completed.", "Starting the replacement deployment.");
+    state.job = null;
+    render();
+    startDeploymentWithPayload(rebuildPayload);
+    return true;
+}
+
 function refreshStatus() {
     return backendCommand("status").then(function (status) {
         setJobFromStatus(status);
+        if (maybeStartPendingRebuild()) {
+            return status;
+        }
         if (state.job) {
             state.currentStep = 4;
         }
-        if (state.currentStep === 4 && (state.yamlMode || artifactLoadMode() === "current")) {
+        if (state.currentStep === 4 && currentJobMode() !== "destroy" && (state.yamlMode || artifactLoadMode() === "current")) {
             loadArtifacts(artifactLoadMode(), true);
         }
         render();
@@ -1183,9 +1224,7 @@ function goBack() {
     render();
 }
 
-function startDeployment() {
-    var submittedPayload = payload();
-
+function startDeploymentWithPayload(submittedPayload) {
     clearStartResponseTimer();
     appendClientLog("Install MicroShift clicked.");
     setTransientStatus("Validating the final deployment request.", "Checking the request before any VM or host action begins.");
@@ -1232,6 +1271,57 @@ function startDeployment() {
         state.backendErrors = [String(error)];
         appendClientLog("Failed to submit the deployment request: " + String(error));
         setTransientStatus("MicroShift deployment failed to start.", "The frontend could not complete the backend start request.");
+        render();
+    });
+}
+
+function startDeployment() {
+    startDeploymentWithPayload(payload());
+}
+
+function requestCleanRebuild() {
+    var clusterId = queryClusterId();
+    var submittedPayload = payload();
+
+    clearStartResponseTimer();
+    if (!clusterId || state.targetPattern !== "create-host") {
+        return;
+    }
+    if (state.currentStep !== 4 || overallErrors().length > 0) {
+        if (state.currentStep === 4) {
+            refreshPreflight();
+        }
+        appendClientLog("Clean rebuild request blocked by validation or preflight errors.");
+        setTransientStatus("Clean rebuild is blocked. Resolve the validation issues shown on this page.", "");
+        revealBlockingState();
+        return;
+    }
+    if (!window.confirm("Destroy and rebuild local deployment " + clusterId + "?")) {
+        return;
+    }
+
+    state.pendingRebuildPayload = submittedPayload;
+    clearBackendErrors();
+    appendClientLog("Clean rebuild requested for " + clusterId + ".");
+    setTransientStatus("Starting clean rebuild.", "Destroying the existing local deployment before reprovisioning.");
+    render();
+    backendCommand("destroy", ["--cluster-id", clusterId]).then(function (result) {
+        if (!result.ok) {
+            state.pendingRebuildPayload = null;
+            state.backendErrors = result.errors || ["MicroShift destroy failed"];
+            appendClientLog("Backend rejected the destroy request: " + state.backendErrors.join(", "));
+            setTransientStatus("Clean rebuild did not start.", "The backend rejected the cleanup request.");
+            render();
+            return;
+        }
+        appendClientLog("Backend accepted the destroy request" + (result.unitName ? " as unit " + result.unitName : "") + ".");
+        setTransientStatus("Destroying the existing local deployment.", "Waiting for local VM cleanup to finish before reprovisioning.");
+        refreshStatus();
+    }).catch(function (error) {
+        state.pendingRebuildPayload = null;
+        state.backendErrors = [String(error)];
+        appendClientLog("Failed to request clean rebuild: " + String(error));
+        setTransientStatus("Clean rebuild failed to start.", "The frontend could not start the cleanup request.");
         render();
     });
 }
@@ -1513,6 +1603,7 @@ function bindEvents() {
     refs.backButton.addEventListener("click", goBack);
     refs.nextButton.addEventListener("click", goNext);
     refs.stopButton.addEventListener("click", cancelDeployment);
+    refs.redeployButton.addEventListener("click", requestCleanRebuild);
     refs.cancelButton.addEventListener("click", function () {
         if (state.job && state.job.running) {
             return;
@@ -1668,6 +1759,7 @@ function cacheRefs() {
     refs.nextButton = document.getElementById("next-button");
     refs.deployButton = document.getElementById("deploy-button");
     refs.cancelButton = document.getElementById("cancel-button");
+    refs.redeployButton = document.getElementById("redeploy-button");
     refs.stopButton = document.getElementById("stop-button");
 }
 

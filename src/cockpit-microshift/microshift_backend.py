@@ -1505,6 +1505,36 @@ def domain_exists(name: str) -> bool:
     return run("virsh", "dominfo", name, check=False).returncode == 0
 
 
+def domain_disk_paths(domain: str) -> list[str]:
+    proc = run("virsh", "domblklist", domain, "--details", check=False)
+    if proc.returncode != 0:
+        return []
+    paths: list[str] = []
+    for line in proc.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 4 and parts[1] == "disk" and parts[3] != "-":
+            paths.append(parts[3])
+    return paths
+
+
+def destroy_domain(domain: str) -> None:
+    run("virsh", "destroy", domain, check=False)
+    run("virsh", "undefine", domain, "--nvram", check=False)
+
+
+def remove_disk(path: str) -> None:
+    if path.startswith("/dev/"):
+        proc = run("lvremove", "-fy", path, check=False)
+        if proc.returncode != 0:
+            message = proc.stderr.strip() or proc.stdout.strip() or f"Failed to remove logical volume {path}"
+            raise RuntimeError(message)
+        return
+    try:
+        Path(path).unlink(missing_ok=True)
+    except OSError as exc:
+        raise RuntimeError(f"Failed to remove disk {path}: {exc}") from exc
+
+
 def prune_cluster_runtime(path: Path, cluster: dict) -> None:
     request = cluster.get("request") or {}
     deployment_id = str(request.get("deploymentId", "")).strip()
@@ -2005,6 +2035,84 @@ def handle_start(payload_b64: str) -> int:
     return json_response({"ok": True, "unitName": unit_name, "request": public_request_view(request)})
 
 
+def run_destroy_job(unit_name: str, cluster_id: str) -> int:
+    cluster = discover_cluster(cluster_id, include_health=False)
+    if not cluster:
+        log_line(f"[ERROR] Cluster {cluster_id} was not found")
+        state = load_state()
+        state.update(
+            {
+                "unitName": unit_name,
+                "status": "failed",
+                "endedAt": current_timestamp(),
+                "returnCode": 1,
+                "error": f"Cluster {cluster_id} was not found",
+            }
+        )
+        save_state(state)
+        return 1
+
+    request = cluster.get("request") or {}
+    if cluster.get("deploymentTargetPattern") != "create-host":
+        log_line(f"[ERROR] Destroy is currently supported only for local create-host deployments: {cluster_id}")
+        state = load_state()
+        state.update(
+            {
+                "unitName": unit_name,
+                "status": "failed",
+                "endedAt": current_timestamp(),
+                "returnCode": 1,
+                "error": "Destroy is currently supported only for local create-host deployments",
+            }
+        )
+        save_state(state)
+        return 1
+
+    deployment_id = str(request.get("deploymentId", "")).strip()
+    work_path = WORK_ROOT / deployment_id if deployment_id else None
+    vm_name = str(cluster.get("vmName") or (request.get("provisioning") or {}).get("vmName") or "").strip()
+    seed_path = LIBVIRT_MEDIA_DIR / f"{vm_name}-seed.iso" if vm_name else None
+
+    log_step(f"Starting destroy for cluster {cluster_id}")
+
+    rc = 0
+    try:
+        if vm_name:
+            disk_paths = domain_disk_paths(vm_name)
+            log_step(f"Destroying libvirt domain {vm_name}")
+            destroy_domain(vm_name)
+            for disk_path in disk_paths:
+                log_step(f"Removing disk {disk_path}")
+                remove_disk(disk_path)
+        if seed_path and seed_path.exists():
+            log_step(f"Removing install media {seed_path.name}")
+            seed_path.unlink(missing_ok=True)
+        if deployment_id:
+            pull_secret_path = SECRET_DIR / f"{deployment_id}-pull-secret.json"
+            if pull_secret_path.exists():
+                log_step(f"Removing local credential file for {deployment_id}")
+                pull_secret_path.unlink(missing_ok=True)
+        if work_path and work_path.exists():
+            log_step(f"Removing work directory {work_path}")
+            shutil.rmtree(work_path)
+        log_step("MicroShift destroy completed successfully")
+    except Exception as exc:  # pragma: no cover
+        log_line(f"[ERROR] {exc}")
+        rc = 1
+
+    state = load_state()
+    state.update(
+        {
+            "unitName": unit_name,
+            "status": "succeeded" if rc == 0 else "failed",
+            "endedAt": current_timestamp(),
+            "returnCode": rc,
+        }
+    )
+    save_state(state)
+    return rc
+
+
 def run_install_job(unit_name: str) -> int:
     request = json.loads(REQUEST_FILE.read_text(encoding="utf-8"))
     output_dir = generated_dir(request)
@@ -2089,8 +2197,12 @@ rm -f {shlex.quote(remote_pull_secret)} {shlex.quote(remote_config)}
     return rc
 
 
-def handle_run_job(unit_name: str) -> int:
+def handle_run_job(unit_name: str, mode: str, cluster_id: str | None) -> int:
     ensure_runtime_dirs()
+    if mode == "destroy":
+        if not cluster_id:
+            return 1
+        return run_destroy_job(unit_name, cluster_id)
     return run_install_job(unit_name)
 
 
@@ -2140,6 +2252,67 @@ def handle_cancel() -> int:
     return json_response({"ok": True, "unitName": unit_name})
 
 
+def handle_destroy(cluster_id: str) -> int:
+    cluster = discover_cluster(cluster_id, include_health=False)
+    if not cluster:
+        return json_response({"ok": False, "errors": [f"Cluster {cluster_id} was not found"]}, exit_code=0)
+    if cluster.get("deploymentTargetPattern") != "create-host":
+        return json_response({"ok": False, "errors": ["Destroy is currently supported only for local create-host deployments"]}, exit_code=0)
+
+    state = load_state()
+    if job_running(state):
+        return json_response({"ok": False, "errors": ["A MicroShift deployment is already running"]}, exit_code=0)
+
+    clear_runtime_state()
+    ensure_runtime_dirs()
+    write_private_file(LOG_FILE, "")
+    unit_name = f"cockpit-microshift-destroy-{dt.datetime.now():%Y%m%d%H%M%S}"
+    state = {
+        "schema": STATE_SCHEMA,
+        "deploymentKind": "microshift",
+        "deploymentTargetPattern": cluster.get("deploymentTargetPattern", ""),
+        "deploymentName": cluster.get("clusterName", ""),
+        "deploymentId": ((cluster.get("request") or {}).get("deploymentId") or ""),
+        "microshiftVersion": cluster.get("microshiftVersion", ""),
+        "host": cluster.get("host", {}),
+        "provisioning": ((cluster.get("request") or {}).get("provisioning") or {}),
+        "mode": "destroy",
+        "unitName": unit_name,
+        "startedAt": current_timestamp(),
+        "status": "starting",
+        "clusterId": cluster_id,
+    }
+    save_state(state)
+
+    proc = run(
+        "systemd-run",
+        "--unit",
+        unit_name,
+        "--description",
+        "Cockpit MicroShift Destroy",
+        "python3",
+        str(HELPER_PATH),
+        "run-job",
+        "--mode",
+        "destroy",
+        "--unit-name",
+        unit_name,
+        "--cluster-id",
+        cluster_id,
+        check=False,
+    )
+    if proc.returncode != 0:
+        state["status"] = "failed"
+        state["endedAt"] = current_timestamp()
+        state["error"] = proc.stderr.strip() or proc.stdout.strip() or "Failed to start MicroShift destroy job"
+        save_state(state)
+        return json_response({"ok": False, "errors": [state["error"]]})
+
+    state["status"] = "running"
+    save_state(state)
+    return json_response({"ok": True, "clusterId": cluster_id, "unitName": unit_name})
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -2157,13 +2330,17 @@ def main() -> int:
     start.add_argument("--payload-b64", required=True)
 
     run_job = subparsers.add_parser("run-job")
+    run_job.add_argument("--mode", choices=["deploy", "destroy"], default="deploy")
     run_job.add_argument("--unit-name", required=True)
+    run_job.add_argument("--cluster-id")
 
     subparsers.add_parser("clusters")
     cluster = subparsers.add_parser("cluster")
     cluster.add_argument("--cluster-id", required=True)
     subparsers.add_parser("status")
     subparsers.add_parser("cancel")
+    destroy = subparsers.add_parser("destroy")
+    destroy.add_argument("--cluster-id", required=True)
 
     args = parser.parse_args()
     try:
@@ -2176,7 +2353,7 @@ def main() -> int:
         if args.command == "start":
             return handle_start(args.payload_b64)
         if args.command == "run-job":
-            return handle_run_job(args.unit_name)
+            return handle_run_job(args.unit_name, args.mode, args.cluster_id)
         if args.command == "clusters":
             return handle_clusters()
         if args.command == "cluster":
@@ -2185,6 +2362,8 @@ def main() -> int:
             return handle_status()
         if args.command == "cancel":
             return handle_cancel()
+        if args.command == "destroy":
+            return handle_destroy(args.cluster_id)
     except Exception as exc:  # pragma: no cover
         return json_response({"ok": False, "errors": [str(exc)]}, exit_code=1)
     return 1
