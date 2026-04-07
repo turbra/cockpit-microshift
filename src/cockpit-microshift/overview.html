@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>MicroShift cluster overview</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="cockpit-microshift.css?v=20260406f" />
+    <script src="../base1/cockpit.js"></script>
+</head>
+<body class="pf-v6-m-tabular-nums" data-page="overview">
+    <div id="app" class="console-page">
+        <header class="page-header">
+            <div class="page-header__copy">
+                <div class="console-eyebrow">Single-node edge fleet management</div>
+                <h1 id="cluster-page-title" class="console-title">Cluster overview</h1>
+                <p id="cluster-page-subtitle" class="console-subtitle">
+                    Inventory details, access paths, and deployment-specific guidance for this MicroShift cluster.
+                </p>
+            </div>
+            <div class="page-header__actions">
+                <a id="open-api-link" class="action-button action-button--primary" href="#" target="_blank" rel="noopener noreferrer">Open API endpoint</a>
+                <button id="overview-refresh-button" class="action-button action-button--secondary" type="button">Refresh</button>
+                <button id="destroy-cluster-button" class="action-button action-button--secondary action-button--danger" type="button">Destroy</button>
+            </div>
+        </header>
+
+        <nav class="page-subnav" aria-label="MicroShift clusters navigation">
+            <a class="page-subnav__link" href="index.html">Clusters List</a>
+            <a class="page-subnav__link" href="create.html">Install MicroShift</a>
+        </nav>
+
+        <nav class="breadcrumb-nav" aria-label="Breadcrumb">
+            <a class="breadcrumb-nav__link" href="index.html">Cluster List</a>
+            <span class="breadcrumb-nav__separator">/</span>
+            <span id="cluster-breadcrumb-name" class="breadcrumb-nav__current">Cluster overview</span>
+        </nav>
+
+        <nav class="overview-tabs" aria-label="Cluster detail tabs">
+            <button class="overview-tabs__tab overview-tabs__tab--active" type="button" data-tab="overview" aria-current="page">Overview</button>
+            <button class="overview-tabs__tab" type="button" data-tab="access">Access</button>
+            <button class="overview-tabs__tab" type="button" data-tab="history">History</button>
+            <button class="overview-tabs__tab" type="button" data-tab="support">Support</button>
+        </nav>
+
+        <section id="cluster-missing" class="empty-state" hidden>
+            The requested MicroShift cluster could not be found in the local inventory.
+        </section>
+
+        <section id="overview-tab-panel" class="tab-panel">
+            <div class="overview-layout">
+                <div class="overview-layout__main">
+                    <article class="page-card">
+                        <div class="page-card__header">
+                            <h2 class="section-title">Details</h2>
+                        </div>
+                        <dl id="cluster-details-list" class="details-list"></dl>
+                    </article>
+
+                    <article class="page-card">
+                        <div class="page-card__header">
+                            <h2 class="section-title">Advisor and recommendations</h2>
+                        </div>
+                        <ul id="advisor-list" class="content-list"></ul>
+                    </article>
+
+                    <article class="page-card">
+                        <div class="page-card__header">
+                            <h2 class="section-title">Operational notices and alerts</h2>
+                        </div>
+                        <ul id="notices-list" class="content-list"></ul>
+                    </article>
+                </div>
+
+                <aside class="overview-layout__side">
+                    <article class="summary-widget">
+                        <h2 class="section-title section-title--small">Cluster health</h2>
+                        <dl id="health-summary-list" class="review-list review-list--compact"></dl>
+                    </article>
+
+                    <article class="summary-widget">
+                        <h2 class="section-title section-title--small">Deployment summary</h2>
+                        <dl id="deployment-summary-list" class="review-list review-list--compact"></dl>
+                    </article>
+                </aside>
+            </div>
+        </section>
+
+        <section id="access-tab-panel" class="tab-panel" hidden>
+            <article class="page-card">
+                <div class="page-card__header">
+                    <h2 class="section-title">Access</h2>
+                </div>
+                <dl id="access-list" class="review-list"></dl>
+            </article>
+        </section>
+
+        <section id="history-tab-panel" class="tab-panel" hidden>
+            <article class="page-card">
+                <div class="page-card__header">
+                    <h2 class="section-title">History</h2>
+                </div>
+                <ul id="history-list" class="content-list"></ul>
+            </article>
+        </section>
+
+        <section id="support-tab-panel" class="tab-panel" hidden>
+            <article class="page-card">
+                <div class="page-card__header">
+                    <h2 class="section-title">Support</h2>
+                </div>
+                <ul id="support-list" class="content-list"></ul>
+            </article>
+        </section>
+    </div>
+
+    <script src="cluster-overview.js"></script>
+</body>
+</html>
