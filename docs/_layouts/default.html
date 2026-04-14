@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="{{ site.lang | default: 'en-US' }}">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    {% seo %}
+    <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}" />
+    {% include head-custom.html %}
+  </head>
+  <body>
+    <a class="cockpit-microshift-skip-link" href="#main-content">Skip to content</a>
+    <div class="cockpit-microshift-site-shell">
+      <header class="cockpit-microshift-site-header">
+        <div class="cockpit-microshift-site-header-inner">
+          <p class="cockpit-microshift-eyebrow">Cockpit MicroShift Documentation</p>
+          <div class="cockpit-microshift-site-brand">
+            <div>
+              <p class="cockpit-microshift-site-brand-title">
+                <a href="{{ '/' | relative_url }}">Cockpit MicroShift</a>
+              </p>
+              <p class="cockpit-microshift-site-brand-tagline">
+                {{ site.description }}
+              </p>
+            </div>
+          </div>
+          <nav class="cockpit-microshift-site-header-actions" aria-label="Primary">
+            {% unless page.url == '/' or page.url == '/index.html' %}
+            <a href="{{ '/' | relative_url }}"><kbd>DOCS HOME</kbd></a>
+            {% endunless %}
+            {% unless page.url == '/documentation-map.html' %}
+            <a href="{{ '/documentation-map.html' | relative_url }}"><kbd>DOCS MAP</kbd></a>
+            {% endunless %}
+            {% unless page.url == '/capabilities.html' %}
+            <a href="{{ '/capabilities.html' | relative_url }}"><kbd>CAPABILITIES</kbd></a>
+            {% endunless %}
+            {% unless page.url == '/practical-use-cases.html' %}
+            <a href="{{ '/practical-use-cases.html' | relative_url }}"><kbd>USE CASES</kbd></a>
+            {% endunless %}
+            {% unless page.url == '/reference.html' %}
+            <a href="{{ '/reference.html' | relative_url }}"><kbd>REFERENCE</kbd></a>
+            {% endunless %}
+            <a href="https://github.com/turbra/cockpit-microshift"><kbd>REPOSITORY</kbd></a>
+          </nav>
+        </div>
+      </header>
+
+      <main id="main-content" class="cockpit-microshift-page-shell">
+        <div class="cockpit-microshift-content-column">
+          {% unless page.url == '/' or page.url == '/index.html' %}
+          <nav class="cockpit-microshift-breadcrumbs" aria-label="Breadcrumb">
+            <a href="{{ '/' | relative_url }}">Docs Home</a>
+            <span>/</span>
+            {% if page.parent_url and page.parent_label %}
+            <a href="{{ page.parent_url | relative_url }}">{{ page.parent_label }}</a>
+            <span>/</span>
+            {% endif %}
+            <span aria-current="page">{{ page.title }}</span>
+          </nav>
+          {% endunless %}
+
+          {% if page.page_type %}
+          <div class="cockpit-microshift-page-type-banner">
+            <span class="cockpit-microshift-page-type-label">{{ page.page_type }}</span>
+            {% if page.summary %}
+            <span class="cockpit-microshift-page-type-blurb">{{ page.summary }}</span>
+            {% endif %}
+          </div>
+          {% endif %}
+
+          <article class="markdown-body">
+            {{ content }}
+          </article>
+        </div>
+
+        <aside class="cockpit-microshift-side-column" aria-label="Page orientation">
+          {% if page.page_type %}
+          <section class="cockpit-microshift-side-block">
+            <h2>Page Type</h2>
+            <p class="cockpit-microshift-side-emphasis">{{ page.page_type }}</p>
+            {% if page.summary %}
+            <p>{{ page.summary }}</p>
+            {% endif %}
+          </section>
+          {% endif %}
+
+          {% if page.topic_family %}
+          <section class="cockpit-microshift-side-block">
+            <h2>Topic Family</h2>
+            <p>{{ page.topic_family }}</p>
+          </section>
+          {% endif %}
+
+          {% if page.operator_focus %}
+          <section class="cockpit-microshift-side-block">
+            <h2>Operator Focus</h2>
+            <ul class="cockpit-microshift-side-list">
+              {% for item in page.operator_focus %}
+              <li>{{ item }}</li>
+              {% endfor %}
+            </ul>
+          </section>
+          {% endif %}
+
+          {% if page.start_here %}
+          <section class="cockpit-microshift-side-block">
+            <h2>Start Here</h2>
+            <ul class="cockpit-microshift-side-list">
+              {% for item in page.start_here %}
+              <li><a href="{{ item.url | relative_url }}">{{ item.label }}</a></li>
+              {% endfor %}
+            </ul>
+          </section>
+          {% endif %}
+
+          {% if page.related_pages %}
+          <section class="cockpit-microshift-side-block">
+            <h2>Related</h2>
+            <ul class="cockpit-microshift-side-list">
+              {% for item in page.related_pages %}
+              <li><a href="{{ item.url | relative_url }}">{{ item.label }}</a></li>
+              {% endfor %}
+            </ul>
+          </section>
+          {% endif %}
+
+          <section class="cockpit-microshift-side-block" id="cockpit-microshift-page-toc" hidden>
+            <h2 id="cockpit-microshift-on-this-page-title">On This Page</h2>
+            <ol
+              class="cockpit-microshift-toc-list"
+              id="cockpit-microshift-toc-list"
+              aria-labelledby="cockpit-microshift-on-this-page-title"
+            ></ol>
+          </section>
+
+          {% if page.source_links %}
+          <section class="cockpit-microshift-side-block">
+            <h2>Source Paths</h2>
+            <ul class="cockpit-microshift-side-list">
+              {% for item in page.source_links %}
+              <li><a href="{{ item.url }}">{{ item.label }}</a></li>
+              {% endfor %}
+            </ul>
+          </section>
+          {% endif %}
+        </aside>
+      </main>
+
+      <footer class="cockpit-microshift-site-footer">
+        Generated from repository docs on {{ site.time | date: "%Y-%m-%d" }}.
+      </footer>
+    </div>
+  </body>
+</html>
