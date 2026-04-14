@@ -81,6 +81,7 @@ a:focus {
 }
 
 .cockpit-microshift-site-header-inner,
+.cockpit-microshift-breadcrumbs-inner,
 .cockpit-microshift-page-shell,
 .cockpit-microshift-site-footer {
   max-width: var(--cockpit-microshift-max-width);
@@ -205,23 +206,35 @@ a:focus {
 }
 
 .cockpit-microshift-breadcrumbs {
-  margin-bottom: 1rem;
-  color: var(--cockpit-microshift-ink-soft);
-  font-size: 0.95rem;
+  border-bottom: 1px solid var(--cockpit-microshift-border);
+  background: var(--cockpit-microshift-surface-alt);
+  font-size: 0.88rem;
 }
 
-.cockpit-microshift-breadcrumbs a {
-  color: var(--cockpit-microshift-ink-soft);
+.cockpit-microshift-breadcrumbs-inner {
+  padding-top: 0.55rem;
+  padding-bottom: 0.55rem;
+  color: var(--cockpit-microshift-ink-muted);
+}
+
+.cockpit-microshift-breadcrumbs-inner a {
+  color: var(--cockpit-microshift-ink-muted);
   text-decoration: none;
 }
 
-.cockpit-microshift-breadcrumbs a:hover,
-.cockpit-microshift-breadcrumbs a:focus {
+.cockpit-microshift-breadcrumbs-inner a:hover,
+.cockpit-microshift-breadcrumbs-inner a:focus {
   color: var(--cockpit-microshift-red-dark);
 }
 
-.cockpit-microshift-breadcrumbs span {
-  margin-right: 0.35rem;
+.cockpit-microshift-breadcrumbs-inner span[aria-hidden="true"] {
+  margin: 0 0.4rem;
+  color: var(--cockpit-microshift-border-strong);
+}
+
+.cockpit-microshift-breadcrumbs-inner span[aria-current="page"] {
+  color: var(--cockpit-microshift-ink);
+  font-weight: 600;
 }
 
 .cockpit-microshift-page-type-banner {
