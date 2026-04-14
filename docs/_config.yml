@@ -1,0 +1,23 @@
+title: "Cockpit MicroShift"
+description: >-
+  Cockpit-hosted MicroShift installer for existing RHEL hosts or locally
+  provisioned libvirt guests, with guided review, host-side execution, and
+  inventory follow-up.
+url: "https://turbra.github.io"
+baseurl: "/cockpit-microshift"
+theme: jekyll-theme-primer
+plugins:
+  - jekyll-seo-tag
+  - jekyll-sitemap
+markdown: kramdown
+kramdown:
+  input: GFM
+exclude:
+  - deployment-cleanup-handoff.md
+  - microshift-support.md
+defaults:
+  - scope:
+      path: ""
+      type: pages
+    values:
+      layout: default

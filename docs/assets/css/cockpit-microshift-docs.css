@@ -1,0 +1,526 @@
+:root {
+  color-scheme: light;
+  --cockpit-microshift-red: #ee0000;
+  --cockpit-microshift-red-dark: #a30000;
+  --cockpit-microshift-red-soft: #fce3e3;
+  --cockpit-microshift-blue: #0066cc;
+  --cockpit-microshift-ink: #151515;
+  --cockpit-microshift-ink-muted: #4d4d4d;
+  --cockpit-microshift-ink-soft: #6a6e73;
+  --cockpit-microshift-border: #e0e0e0;
+  --cockpit-microshift-border-strong: #c7c7c7;
+  --cockpit-microshift-surface: #ffffff;
+  --cockpit-microshift-surface-alt: #f5f5f5;
+  --cockpit-microshift-max-width: 1360px;
+  --cockpit-microshift-body-width: 840px;
+  --cockpit-microshift-sidebar-width: 280px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at top right, rgba(238, 0, 0, 0.06), transparent 28rem),
+    linear-gradient(180deg, #fffdfb 0, #ffffff 18rem);
+  color: var(--cockpit-microshift-ink);
+  font-family: "Red Hat Text", "Helvetica Neue", Arial, sans-serif;
+  line-height: 1.5;
+}
+
+a {
+  color: var(--cockpit-microshift-blue);
+  text-decoration: underline;
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.12em;
+}
+
+a:hover,
+a:focus {
+  color: var(--cockpit-microshift-red-dark);
+}
+
+.container-lg,
+.container-md {
+  max-width: var(--cockpit-microshift-max-width) !important;
+  padding-right: 2rem !important;
+  padding-left: 2rem !important;
+}
+
+.cockpit-microshift-skip-link {
+  position: absolute;
+  top: -100%;
+  left: 1rem;
+  z-index: 20;
+  padding: 0.75rem 1rem;
+  color: #ffffff;
+  background: var(--cockpit-microshift-red);
+  text-decoration: none;
+}
+
+.cockpit-microshift-skip-link:focus {
+  top: 1rem;
+}
+
+.cockpit-microshift-site-shell {
+  min-height: 100vh;
+}
+
+.cockpit-microshift-site-header {
+  border-top: 4px solid var(--cockpit-microshift-red);
+  border-bottom: 1px solid var(--cockpit-microshift-border);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+}
+
+.cockpit-microshift-site-header-inner,
+.cockpit-microshift-page-shell,
+.cockpit-microshift-site-footer {
+  max-width: var(--cockpit-microshift-max-width);
+  margin: 0 auto;
+  padding-right: 2rem;
+  padding-left: 2rem;
+}
+
+.cockpit-microshift-site-header-inner {
+  padding-top: 1.25rem;
+  padding-bottom: 1rem;
+}
+
+.cockpit-microshift-eyebrow {
+  margin: 0 0 0.5rem;
+  color: var(--cockpit-microshift-ink-soft);
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cockpit-microshift-site-brand-title {
+  margin: 0;
+  font-family: "Red Hat Display", "Red Hat Text", Arial, sans-serif;
+  font-size: clamp(2.15rem, 4vw, 3.6rem);
+  font-weight: 500;
+  letter-spacing: -0.045em;
+  line-height: 1.02;
+}
+
+.cockpit-microshift-site-brand-title a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.cockpit-microshift-site-brand-title a:hover,
+.cockpit-microshift-site-brand-title a:focus {
+  color: var(--cockpit-microshift-red-dark);
+}
+
+.cockpit-microshift-site-brand-tagline {
+  max-width: 68ch;
+  margin: 0.45rem 0 0;
+  color: var(--cockpit-microshift-ink-muted);
+  font-size: 1.05rem;
+  line-height: 1.5;
+}
+
+.cockpit-microshift-site-header-actions,
+.cockpit-microshift-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.cockpit-microshift-site-header-actions {
+  margin-top: 0.85rem;
+}
+
+.cockpit-microshift-site-header-actions a,
+.markdown-body a.kbd-link {
+  text-decoration: none;
+}
+
+.cockpit-microshift-site-header-actions kbd,
+.markdown-body a kbd,
+.markdown-body kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.35rem;
+  margin: 0.2rem 0.35rem 0.2rem 0;
+  padding: 0.42rem 0.82rem;
+  color: var(--cockpit-microshift-ink);
+  background: var(--cockpit-microshift-surface);
+  border: 1px solid var(--cockpit-microshift-ink-muted);
+  border-radius: 0;
+  box-shadow: none;
+  font-family: "Red Hat Text", Arial, sans-serif;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: normal;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease,
+    border-color 140ms ease;
+}
+
+.cockpit-microshift-site-header-actions kbd:hover,
+.cockpit-microshift-site-header-actions kbd:focus,
+.markdown-body a kbd:hover,
+.markdown-body a kbd:focus,
+.markdown-body kbd:hover,
+.markdown-body kbd:focus {
+  color: #ffffff;
+  background: var(--cockpit-microshift-red);
+  border-color: var(--cockpit-microshift-red);
+}
+
+.cockpit-microshift-page-shell {
+  display: grid;
+  grid-template-columns:
+    minmax(0, var(--cockpit-microshift-body-width))
+    minmax(240px, var(--cockpit-microshift-sidebar-width));
+  gap: 3rem;
+  align-items: start;
+  padding-top: 2rem;
+  padding-bottom: 4rem;
+}
+
+.cockpit-microshift-breadcrumbs {
+  margin-bottom: 1rem;
+  color: var(--cockpit-microshift-ink-soft);
+  font-size: 0.95rem;
+}
+
+.cockpit-microshift-breadcrumbs a {
+  color: var(--cockpit-microshift-ink-soft);
+  text-decoration: none;
+}
+
+.cockpit-microshift-breadcrumbs a:hover,
+.cockpit-microshift-breadcrumbs a:focus {
+  color: var(--cockpit-microshift-red-dark);
+}
+
+.cockpit-microshift-breadcrumbs span {
+  margin-right: 0.35rem;
+}
+
+.cockpit-microshift-page-type-banner {
+  display: grid;
+  gap: 0.3rem;
+  margin-bottom: 1.4rem;
+  padding: 0.95rem 1rem;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid var(--cockpit-microshift-border);
+}
+
+.cockpit-microshift-page-type-label {
+  color: var(--cockpit-microshift-red);
+  font-size: 0.84rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cockpit-microshift-page-type-blurb {
+  color: var(--cockpit-microshift-ink-muted);
+  font-size: 0.97rem;
+}
+
+.markdown-body {
+  max-width: 100%;
+  margin: 0;
+  color: var(--cockpit-microshift-ink);
+  background: transparent;
+  font-family: "Red Hat Text", "Helvetica Neue", Arial, sans-serif;
+}
+
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  color: var(--cockpit-microshift-ink);
+  font-family: "Red Hat Display", "Red Hat Text", Arial, sans-serif;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.25;
+}
+
+.markdown-body h1 {
+  margin-top: 0;
+  margin-bottom: 1.2rem;
+  border: 0;
+  font-size: clamp(2.35rem, 5vw, 4rem);
+  line-height: 1.06;
+}
+
+.markdown-body h2 {
+  margin-top: 2.5rem;
+  margin-bottom: 1rem;
+  padding: 0;
+  border: 0;
+  color: var(--cockpit-microshift-red);
+  font-size: clamp(1.6rem, 3vw, 2.15rem);
+}
+
+.markdown-body h3 {
+  margin-top: 1.9rem;
+  font-size: 1.28rem;
+}
+
+.markdown-body p,
+.markdown-body li,
+.markdown-body td,
+.markdown-body th {
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body table,
+.markdown-body pre,
+.markdown-body blockquote,
+.cockpit-microshift-callout,
+.cockpit-microshift-badge-row,
+.cockpit-microshift-decision-grid,
+.cockpit-microshift-media-grid,
+.cockpit-microshift-diagram-card {
+  margin-bottom: 1.25rem;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 1.25rem;
+}
+
+.markdown-body li + li {
+  margin-top: 0.25rem;
+}
+
+.markdown-body hr {
+  height: 1px;
+  margin: 2rem 0;
+  background: var(--cockpit-microshift-border);
+  border: 0;
+}
+
+.markdown-body table {
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.markdown-body table th,
+.markdown-body table td {
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--cockpit-microshift-border);
+  vertical-align: top;
+}
+
+.markdown-body table th {
+  background: var(--cockpit-microshift-surface-alt);
+  font-weight: 700;
+  text-align: left;
+}
+
+.markdown-body code,
+.markdown-body pre,
+.markdown-body tt {
+  font-family: "Red Hat Mono", Consolas, monospace;
+}
+
+.markdown-body pre {
+  padding: 1rem 1.1rem;
+  overflow: auto;
+  color: #ffffff;
+  background: #151515;
+  border-radius: 0;
+}
+
+.markdown-body pre code {
+  color: inherit;
+  background: transparent;
+}
+
+.markdown-body img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--cockpit-microshift-border);
+}
+
+.cockpit-microshift-side-column {
+  position: sticky;
+  top: 1.5rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.cockpit-microshift-side-block {
+  padding: 1rem 1.05rem;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid var(--cockpit-microshift-border);
+}
+
+.cockpit-microshift-side-block h2 {
+  margin: 0 0 0.6rem;
+  color: var(--cockpit-microshift-red);
+  font-family: "Red Hat Display", "Red Hat Text", Arial, sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.cockpit-microshift-side-block p {
+  margin: 0.45rem 0 0;
+  font-size: 0.95rem;
+}
+
+.cockpit-microshift-side-emphasis {
+  color: var(--cockpit-microshift-ink);
+  font-weight: 700;
+}
+
+.cockpit-microshift-side-list,
+.cockpit-microshift-toc-list {
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.cockpit-microshift-side-list li + li,
+.cockpit-microshift-toc-list li + li {
+  margin-top: 0.35rem;
+}
+
+.cockpit-microshift-decision-grid,
+.cockpit-microshift-media-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.cockpit-microshift-decision-card,
+.cockpit-microshift-media-card,
+.cockpit-microshift-diagram-card {
+  padding: 1.05rem 1.1rem;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid var(--cockpit-microshift-border);
+}
+
+.cockpit-microshift-decision-card {
+  display: grid;
+  gap: 0.45rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.cockpit-microshift-decision-card:hover,
+.cockpit-microshift-decision-card:focus {
+  border-color: var(--cockpit-microshift-red);
+}
+
+.cockpit-microshift-decision-intent {
+  color: var(--cockpit-microshift-ink-soft);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cockpit-microshift-decision-title {
+  color: var(--cockpit-microshift-ink);
+  font-family: "Red Hat Display", "Red Hat Text", Arial, sans-serif;
+  font-size: 1.25rem;
+  font-weight: 500;
+}
+
+.cockpit-microshift-decision-body,
+.cockpit-microshift-media-card p,
+.cockpit-microshift-diagram-card p {
+  color: var(--cockpit-microshift-ink-muted);
+  font-size: 0.96rem;
+}
+
+.cockpit-microshift-media-card {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.cockpit-microshift-diagram-card img {
+  display: block;
+  width: 100%;
+  border: 0;
+}
+
+.cockpit-microshift-callout {
+  padding: 1rem 1.1rem;
+  border-left: 4px solid var(--cockpit-microshift-red);
+  background: var(--cockpit-microshift-red-soft);
+}
+
+.cockpit-microshift-callout.is-note,
+.cockpit-microshift-callout.is-tip {
+  border-left-color: var(--cockpit-microshift-blue);
+  background: #edf5ff;
+}
+
+.cockpit-microshift-callout-title {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cockpit-microshift-site-footer {
+  padding-top: 1.3rem;
+  padding-bottom: 2rem;
+  color: var(--cockpit-microshift-ink-soft);
+  font-size: 0.92rem;
+  border-top: 1px solid var(--cockpit-microshift-border);
+}
+
+@media (max-width: 1080px) {
+  .cockpit-microshift-page-shell {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2rem;
+  }
+
+  .cockpit-microshift-side-column {
+    position: static;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .cockpit-microshift-site-header-inner,
+  .cockpit-microshift-page-shell,
+  .cockpit-microshift-site-footer,
+  .container-lg,
+  .container-md {
+    padding-right: 1rem !important;
+    padding-left: 1rem !important;
+  }
+
+  .cockpit-microshift-decision-grid,
+  .cockpit-microshift-media-grid,
+  .cockpit-microshift-side-column {
+    grid-template-columns: 1fr;
+  }
+}
