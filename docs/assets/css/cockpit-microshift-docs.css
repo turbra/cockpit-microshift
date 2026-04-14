@@ -147,6 +147,16 @@ a:focus {
   text-decoration: none;
 }
 
+.cockpit-microshift-badge-row a {
+  display: inline-flex;
+  align-items: center;
+  line-height: 0;
+}
+
+.cockpit-microshift-badge-row img {
+  display: block;
+}
+
 .cockpit-microshift-site-header-actions kbd,
 .markdown-body a kbd,
 .markdown-body kbd {
