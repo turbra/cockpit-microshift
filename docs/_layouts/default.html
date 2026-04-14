@@ -61,7 +61,7 @@
 
       <main id="main-content" class="cockpit-microshift-page-shell">
         <div class="cockpit-microshift-content-column">
-          {% if page.page_type %}
+          {% if page.page_type and page.url != '/' and page.url != '/index.html' %}
           <div class="cockpit-microshift-page-type-banner">
             <span class="cockpit-microshift-page-type-label">{{ page.page_type }}</span>
             {% if page.summary %}
