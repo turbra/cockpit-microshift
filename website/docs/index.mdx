@@ -1,0 +1,193 @@
+---
+title: Cockpit MicroShift
+description: Cockpit-hosted local MicroShift installer for one existing RHEL host or one local libvirt guest.
+slug: /
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import Link from '@docusaurus/Link';
+
+# Cockpit MicroShift
+
+`cockpit-microshift` is a Cockpit plugin for guided single-node MicroShift
+deployment. It installs onto an existing RHEL host over SSH, or creates a local
+libvirt guest first and then applies the same in-guest RPM-based MicroShift
+install model.
+
+<div className="badge-row">
+  <a href="https://github.com/turbra/cockpit-microshift/blob/main/LICENSE"><img alt="License: GPL-3.0" src="https://img.shields.io/github/license/turbra/cockpit-microshift?style=flat-square" /></a>
+  <img alt="MicroShift 4.21" src="https://img.shields.io/badge/MicroShift-4.21-red?style=flat-square" />
+  <img alt="Cockpit plugin" src="https://img.shields.io/badge/Cockpit-plugin-blue?style=flat-square" />
+  <img alt="KVM and libvirt" src="https://img.shields.io/badge/KVM-libvirt-blue?style=flat-square" />
+  <img alt="RHEL 9 or 10" src="https://img.shields.io/badge/RHEL-9%2F10-red?style=flat-square" />
+</div>
+
+## Quick Start
+
+<Tabs>
+  <TabItem value="rpm" label="RPM install" default>
+
+```bash
+sudo dnf install -y rpm-build
+cd /path/to/cockpit-microshift
+./build-rpm.sh
+sudo dnf install -y ./rpmbuild/RPMS/noarch/cockpit-microshift-*.noarch.rpm
+```
+
+Use the RPM path when you want a package-managed local install.
+
+  </TabItem>
+  <TabItem value="source" label="Source install">
+
+```bash
+sudo mkdir -p /usr/share/cockpit/cockpit-microshift
+sudo install -m 0644 src/cockpit-microshift/manifest.json /usr/share/cockpit/cockpit-microshift/
+sudo install -m 0644 src/cockpit-microshift/index.html /usr/share/cockpit/cockpit-microshift/
+sudo install -m 0644 src/cockpit-microshift/create.html /usr/share/cockpit/cockpit-microshift/
+sudo install -m 0644 src/cockpit-microshift/overview.html /usr/share/cockpit/cockpit-microshift/
+sudo install -m 0644 src/cockpit-microshift/cockpit-microshift.css /usr/share/cockpit/cockpit-microshift/
+sudo install -m 0644 src/cockpit-microshift/cockpit-microshift.js /usr/share/cockpit/cockpit-microshift/
+sudo install -m 0644 src/cockpit-microshift/cluster-list.js /usr/share/cockpit/cockpit-microshift/
+sudo install -m 0644 src/cockpit-microshift/cluster-overview.js /usr/share/cockpit/cockpit-microshift/
+sudo install -m 0755 src/cockpit-microshift/microshift_backend.py /usr/share/cockpit/cockpit-microshift/
+```
+
+Use the source path when you are iterating on local plugin files.
+
+  </TabItem>
+  <TabItem value="open" label="Open Cockpit">
+
+```bash
+sudo systemctl enable --now cockpit.socket
+```
+
+Open `https://<host>:9090` and navigate to `MicroShift`.
+
+  </TabItem>
+</Tabs>
+
+## Current Support
+
+| Area | Current path |
+| --- | --- |
+| MicroShift | `4.21` |
+| Architecture | `x86_64` |
+| Cluster shape | single-node |
+| Networking | static host and guest networking |
+| Existing target | RHEL host over SSH |
+| Local target | libvirt/KVM guest created on the Cockpit host |
+| Local storage | directory-backed or logical libvirt pools |
+
+## Install Model
+
+The final MicroShift installation follows the Red Hat Build of MicroShift
+host-based RPM model. The `create-host` path is a convenience layer: it creates
+a RHEL guest first, waits for SSH, and then runs the same in-guest install flow
+used by an existing host.
+
+## Operator Screens
+
+<div className="screenshot-grid">
+  <figure>
+    <img src={require('./assets/microshift-ui.jpg').default} alt="Cockpit MicroShift installer view" />
+    <figcaption>The create flow keeps target selection, repository access, host preparation, artifact review, and deployment status in one workspace.</figcaption>
+  </figure>
+  <figure>
+    <img src={require('./assets/microshift-install-flow.svg').default} alt="Cockpit MicroShift host deployment workflow" />
+    <figcaption>The workflow stays host-first: validate the target, render artifacts, install MicroShift, then return for inventory, access, and cleanup.</figcaption>
+  </figure>
+</div>
+
+## First Workflow
+
+<Tabs>
+  <TabItem value="existing" label="Existing host" default>
+
+1. Choose `Use an existing RHEL host`.
+2. Provide SSH host, SSH user, SSH key path, registry authentication, and the
+   repository access mode.
+3. Review the rendered `config.yaml`, request summary, and install plan.
+4. Start the deployment and watch status from the same Cockpit page.
+
+  </TabItem>
+  <TabItem value="create" label="Create host">
+
+1. Choose `Create a local libvirt guest`.
+2. Provide a RHEL qcow2 image source, bridge, static IP, gateway, DNS servers,
+   and guest sizing.
+3. Review cloud-init inputs, guest plan, `virt-install` plan, and MicroShift
+   config.
+4. Provision the guest, install MicroShift inside it, and return later for
+   kubeconfig access or cleanup.
+
+  </TabItem>
+  <TabItem value="review" label="Review only">
+
+1. Stay in the create flow until artifact review.
+2. Inspect `config.yaml`, request JSON, install plan, and any create-host
+   provisioning artifacts.
+3. Deploy only after host networking, repository access, firewall intent, and
+   registry authentication match the intended target.
+
+  </TabItem>
+</Tabs>
+
+## Workflow Shape
+
+<div className="workflow-rail">
+  <section className="workflow-step">
+    <div className="workflow-node">01</div>
+    <h3>Prepare</h3>
+    <p>Confirm Cockpit, SSH access, registry authentication, repository access, and host networking.</p>
+    <strong>Target model ready</strong>
+  </section>
+  <section className="workflow-step">
+    <div className="workflow-node">02</div>
+    <h3>Create</h3>
+    <p>Choose an existing host or local libvirt guest, then enter host, network, and MicroShift settings.</p>
+    <strong>Deployment intent captured</strong>
+  </section>
+  <section className="workflow-step">
+    <div className="workflow-node">03</div>
+    <h3>Review</h3>
+    <p>Inspect rendered config, install plan, request summary, and create-host provisioning artifacts.</p>
+    <strong>Generated artifacts verified</strong>
+  </section>
+  <section className="workflow-step">
+    <div className="workflow-node">04</div>
+    <h3>Install</h3>
+    <p>Run the RPM-based install, track status, retrieve kubeconfig details, rebuild, or destroy local guests.</p>
+    <strong>Local state tracked</strong>
+  </section>
+</div>
+
+## Explore
+
+<div className="doc-link-grid">
+  <Link className="doc-link-card" to="/getting-started/install/">
+    <strong>Getting Started</strong>
+    <span>Install the plugin, check the host, and run the first target-specific workflow.</span>
+  </Link>
+  <Link className="doc-link-card" to="/concepts/capabilities/">
+    <strong>Capabilities</strong>
+    <span>Check target patterns, supported assumptions, and backend boundaries.</span>
+  </Link>
+  <Link className="doc-link-card" to="/examples/">
+    <strong>Examples</strong>
+    <span>Use practical checklists for existing hosts, local guests, review, and cleanup.</span>
+  </Link>
+  <Link className="doc-link-card" to="/reference/">
+    <strong>Reference</strong>
+    <span>Find install commands, packaging details, runtime files, and backend commands.</span>
+  </Link>
+</div>
+
+## What The Plugin Covers
+
+- guided MicroShift deployment onto an existing RHEL host over SSH
+- optional local libvirt guest creation before the in-guest install
+- rendered `config.yaml`, request summary, install plan, cloud-init inputs, and
+  `virt-install` plan review
+- deployment status, recent output, kubeconfig retrieval, and local inventory
+- destroy and clean rebuild actions for local `create-host` deployments
