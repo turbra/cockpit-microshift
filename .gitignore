@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 rpmbuild/
+website/.docusaurus/
+website/build/
+website/node_modules/

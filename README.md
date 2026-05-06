@@ -9,6 +9,9 @@ existing RHEL host or one KVM/libvirt guest created on the Cockpit host.
 ![KVM/libvirt](https://img.shields.io/badge/KVM-libvirt-blue)
 ![RHEL 9/10](https://img.shields.io/badge/RHEL-9%2F10-red)
 
+Documentation site:
+https://turbra.github.io/cockpit-microshift/
+
 - guided MicroShift host deployment
 - local cluster inventory landing page with per-cluster overview
 - self-contained privileged backend for validation, runtime state, and install artifacts
@@ -18,16 +21,16 @@ existing RHEL host or one KVM/libvirt guest created on the Cockpit host.
 
 ## Start Here
 
-- install the plugin from source:
-  [commands](#from-source)
+- read the docs site:
+  https://turbra.github.io/cockpit-microshift/
+- install the plugin:
+  https://turbra.github.io/cockpit-microshift/getting-started/install/
 - review host prerequisites:
-  [notes](#prerequisites)
-- build the RPM:
-  [commands](#building-the-rpm)
-- install the plugin from RPM:
-  [commands](#from-rpm)
-- review backend limits and runtime ownership:
-  [notes](#backend-expectations)
+  https://turbra.github.io/cockpit-microshift/reference/
+- check backend runtime ownership:
+  https://turbra.github.io/cockpit-microshift/concepts/runtime-model/
+- use task examples:
+  https://turbra.github.io/cockpit-microshift/examples/
 
 > [!IMPORTANT]
 > The validated deployment path today is:
@@ -182,6 +185,8 @@ sudo dnf install -y ./rpmbuild/RPMS/noarch/cockpit-microshift-*.noarch.rpm
 
 - `src/cockpit-microshift/`
   - Cockpit runtime assets and backend helper
+- `website/`
+  - Docusaurus documentation site and GitHub Pages source
 - `docs/microshift-support.md`
   - architecture notes, reference mapping, and known gaps
 - `build-rpm.sh`
